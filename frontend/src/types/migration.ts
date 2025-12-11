@@ -1,0 +1,139 @@
+export type DataSourceType = 'api' | 'csv' | 'json' | 'screenshot' | 'web_scrape';
+
+export type MigrationStatus =
+  | 'draft'
+  | 'pending'
+  | 'extracting'
+  | 'transforming'
+  | 'validating'
+  | 'loading'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'paused';
+
+export interface DataSource {
+  type: DataSourceType;
+  name: string;
+  service: string;
+  entity: string;
+  api_key?: string;
+  api_endpoint?: string;
+  file_path?: string;
+  url?: string;
+  browser_instructions?: string;
+  screenshot_path?: string;
+  batch_size: number;
+  rate_limit?: number;
+  filters: Record<string, unknown>;
+}
+
+export interface FieldMapping {
+  source_field: string;
+  target_field: string;
+  transform: string;
+  config: Record<string, unknown>;
+}
+
+export interface EntityMapping {
+  source_service: string;
+  source_entity: string;
+  target_service: string;
+  target_entity: string;
+  field_mappings: FieldMapping[];
+}
+
+export interface MigrationStep {
+  id: string;
+  name: string;
+  entity: string;
+  status: string;
+  started_at?: string;
+  completed_at?: string;
+  records_processed: number;
+  records_succeeded: number;
+  records_failed: number;
+  errors: Array<Record<string, unknown>>;
+}
+
+export interface Migration {
+  id: string;
+  name: string;
+  description: string;
+  status: MigrationStatus;
+  sources: DataSource[];
+  target_service: string;
+  target_site?: string;
+  entity_mappings: EntityMapping[];
+  dry_run: boolean;
+  batch_size: number;
+  created_at: string;
+  updated_at?: string;
+  started_at?: string;
+  completed_at?: string;
+  steps: MigrationStep[];
+  total_records_processed: number;
+  total_records_succeeded: number;
+  total_records_failed: number;
+}
+
+export interface MigrationCreate {
+  name: string;
+  description?: string;
+  sources?: DataSource[];
+  target_service?: string;
+  target_api_key?: string;
+  target_site?: string;
+  entity_mappings?: EntityMapping[];
+  dry_run?: boolean;
+  batch_size?: number;
+  deduplication?: Record<string, string>;
+}
+
+export interface FieldSchema {
+  name: string;
+  type: string;
+  required: boolean;
+  description: string;
+}
+
+export interface EntitySchema {
+  service: string;
+  entity: string;
+  fields: FieldSchema[];
+}
+
+export interface TransformType {
+  name: string;
+  description: string;
+  config_schema: Record<string, unknown>;
+}
+
+export interface PreviewRequest {
+  source_record: Record<string, unknown>;
+  source_service: string;
+  source_entity: string;
+  target_service: string;
+  target_entity: string;
+  field_mappings: FieldMapping[];
+}
+
+export interface PreviewResponse {
+  source_data: Record<string, unknown>;
+  transformed_data: Record<string, unknown>;
+  validation_errors: string[];
+  is_valid: boolean;
+}
+
+export interface ProgressEvent {
+  type: 'progress' | 'step_complete' | 'error' | 'complete';
+  phase?: string;
+  step_name?: string;
+  records_processed: number;
+  records_succeeded: number;
+  records_failed: number;
+  total_records?: number;
+  message?: string;
+  error?: string;
+  timestamp: string;
+}
