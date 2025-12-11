@@ -95,12 +95,38 @@ export interface FieldSchema {
   type: string;
   required: boolean;
   description: string;
+  enum_values?: string[];
+  default?: unknown;
+  properties?: FieldSchema[]; // For nested objects
 }
 
 export interface EntitySchema {
   service: string;
   entity: string;
   fields: FieldSchema[];
+  description?: string;
+}
+
+export interface ServiceSchema {
+  service: string;
+  entities: EntitySchema[];
+}
+
+// AI Chat types
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  actions?: ChatAction[];
+}
+
+export interface ChatAction {
+  id: string;
+  type: 'add_field' | 'remove_field' | 'add_mapping' | 'remove_mapping' | 'update_schema';
+  label: string;
+  data: Record<string, unknown>;
+  applied?: boolean;
 }
 
 export interface TransformType {

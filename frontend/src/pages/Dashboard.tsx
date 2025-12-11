@@ -72,7 +72,7 @@ export function Dashboard() {
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Link to="/wizard">
+            <Link to="/workspace">
               <Button>
                 <Plus className="mr-2 h-4 w-4" />
                 New Migration
@@ -124,7 +124,7 @@ export function Dashboard() {
               <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
                 Create your first migration to get started
               </p>
-              <Link to="/wizard" className="mt-4">
+              <Link to="/workspace" className="mt-4">
                 <Button>
                   <Plus className="mr-2 h-4 w-4" />
                   New Migration
