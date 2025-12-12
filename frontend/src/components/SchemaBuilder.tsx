@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Plus, Upload, Globe, Trash2, Edit2, Check, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, ChevronDown, ChevronRight, Upload, Sparkles } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Select } from '@/components/ui';
+import { DataInputModal } from '@/components/DataInputModal';
 import { useMigrationStore } from '@/store/migration';
 import type { EntitySchema, FieldSchema } from '@/types/migration';
 
@@ -290,28 +291,33 @@ export function SchemaBuilder() {
     setTargetSchema,
   } = useMigrationStore();
 
-  const [showAddSource, setShowAddSource] = useState(false);
-  const [newSourceService, setNewSourceService] = useState('');
-  const [newSourceEntity, setNewSourceEntity] = useState('');
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importTarget, setImportTarget] = useState<'source' | 'target'>('source');
 
-  const handleAddSourceSchema = () => {
-    if (!newSourceService || !newSourceEntity) return;
-    addSourceSchema({
-      service: newSourceService.toLowerCase(),
-      entity: newSourceEntity,
-      fields: [],
-    });
-    setNewSourceService('');
-    setNewSourceEntity('');
-    setShowAddSource(false);
+  const handleImportSource = () => {
+    setImportTarget('source');
+    setShowImportModal(true);
   };
 
-  const handleAddTargetSchema = () => {
-    setTargetSchema({
-      service: 'target',
-      entity: 'Entity',
-      fields: [],
-    });
+  const handleImportTarget = () => {
+    setImportTarget('target');
+    setShowImportModal(true);
+  };
+
+  const handleSchemaGenerated = (schema: EntitySchema) => {
+    if (importTarget === 'source') {
+      // Check if schema already exists
+      const existingIndex = sourceSchemas.findIndex(
+        (s) => s.service === schema.service && s.entity === schema.entity
+      );
+      if (existingIndex >= 0) {
+        updateSourceSchema(schema.service, schema.entity, schema);
+      } else {
+        addSourceSchema(schema);
+      }
+    } else {
+      setTargetSchema(schema);
+    }
   };
 
   return (
@@ -320,61 +326,61 @@ export function SchemaBuilder() {
       <div>
         <h2 className="text-xl font-semibold mb-2">Schema Builder</h2>
         <p className="text-[hsl(var(--muted-foreground))]">
-          Define source and target schemas. You can load existing schemas, upload JSON/CSV data to infer schemas, or create them manually.
+          Import schemas from files, APIs, screenshots, or web pages. AI will help transform your data into structured schemas.
         </p>
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-2 flex-wrap">
-        <Button variant="outline" onClick={() => setShowAddSource(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Source Schema
-        </Button>
-        <Button variant="outline" disabled>
-          <Upload className="h-4 w-4 mr-2" />
-          Upload JSON/CSV
-        </Button>
-        <Button variant="outline" disabled>
-          <Globe className="h-4 w-4 mr-2" />
-          Discover from API
-        </Button>
-      </div>
-
-      {/* Add Source Form */}
-      {showAddSource && (
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex gap-2 items-end">
-              <div>
-                <label className="text-sm font-medium mb-1 block">Service</label>
-                <Input
-                  value={newSourceService}
-                  onChange={(e) => setNewSourceService(e.target.value)}
-                  placeholder="e.g., stripe"
-                />
+      {/* Import Options Info */}
+      <Card className="bg-gradient-to-r from-[hsl(var(--primary))]/5 to-[hsl(var(--primary))]/10 border-[hsl(var(--primary))]/20">
+        <CardContent className="py-4">
+          <div className="flex items-start gap-3">
+            <Sparkles className="h-5 w-5 text-[hsl(var(--primary))] mt-0.5" />
+            <div>
+              <h3 className="font-medium mb-1">AI-Powered Schema Import</h3>
+              <p className="text-sm text-[hsl(var(--muted-foreground))] mb-3">
+                Import schemas from multiple sources with AI assistance:
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                  <span>JSON/CSV files</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                  <span>API endpoints</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                  <span>Screenshots</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+                  <span>Web scraping</span>
+                </div>
               </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">Entity</label>
-                <Input
-                  value={newSourceEntity}
-                  onChange={(e) => setNewSourceEntity(e.target.value)}
-                  placeholder="e.g., Customer"
-                />
-              </div>
-              <Button onClick={handleAddSourceSchema}>Add</Button>
-              <Button variant="outline" onClick={() => setShowAddSource(false)}>Cancel</Button>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Source Schemas */}
       <div>
-        <h3 className="text-lg font-medium mb-4">Source Schemas</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium">Source Schemas</h3>
+          <Button onClick={handleImportSource}>
+            <Upload className="h-4 w-4 mr-2" />
+            Import Source Schema
+          </Button>
+        </div>
         {sourceSchemas.length === 0 ? (
           <Card className="border-dashed">
-            <CardContent className="py-8 text-center text-[hsl(var(--muted-foreground))]">
-              No source schemas defined. Add a schema to get started.
+            <CardContent className="py-8 text-center">
+              <Upload className="h-8 w-8 mx-auto mb-3 text-[hsl(var(--muted-foreground))]" />
+              <p className="text-[hsl(var(--muted-foreground))] mb-3">No source schemas defined.</p>
+              <Button onClick={handleImportSource}>
+                <Upload className="h-4 w-4 mr-2" />
+                Import Your First Schema
+              </Button>
             </CardContent>
           </Card>
         ) : (
@@ -393,7 +399,13 @@ export function SchemaBuilder() {
 
       {/* Target Schema */}
       <div>
-        <h3 className="text-lg font-medium mb-4">Target Schema</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium">Target Schema</h3>
+          <Button onClick={handleImportTarget} variant={targetSchema ? 'outline' : 'primary'}>
+            <Upload className="h-4 w-4 mr-2" />
+            {targetSchema ? 'Replace Target Schema' : 'Import Target Schema'}
+          </Button>
+        </div>
         {targetSchema ? (
           <SchemaEditorCard
             schema={targetSchema}
@@ -404,17 +416,27 @@ export function SchemaBuilder() {
         ) : (
           <Card className="border-dashed border-[hsl(var(--primary))]/50">
             <CardContent className="py-8 text-center">
-              <p className="text-[hsl(var(--muted-foreground))] mb-4">
+              <Upload className="h-8 w-8 mx-auto mb-3 text-[hsl(var(--primary))]" />
+              <p className="text-[hsl(var(--muted-foreground))] mb-3">
                 No target schema defined.
               </p>
-              <Button onClick={handleAddTargetSchema}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Target Schema
+              <Button onClick={handleImportTarget}>
+                <Upload className="h-4 w-4 mr-2" />
+                Import Target Schema
               </Button>
             </CardContent>
           </Card>
         )}
       </div>
+
+      {/* Import Modal */}
+      <DataInputModal
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSchemaGenerated={handleSchemaGenerated}
+        outputType="schema"
+        existingSchemas={sourceSchemas}
+      />
     </div>
   );
 }

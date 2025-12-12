@@ -9,10 +9,11 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
-import { ArrowRight, Plus, Trash2, Settings, GripVertical } from 'lucide-react';
+import { ArrowRight, Plus, Trash2, Settings, GripVertical, Upload, Sparkles, Wand2 } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Select, Input, Modal } from '@/components/ui';
+import { DataInputModal } from '@/components/DataInputModal';
 import { useMigrationStore } from '@/store/migration';
-import { schemaAPI, mappingAPI } from '@/lib/api';
+import { mappingAPI } from '@/lib/api';
 import type { FieldSchema, EntityMapping, FieldMapping, TransformType } from '@/types/migration';
 import { cn } from '@/lib/utils';
 
@@ -210,28 +211,42 @@ function TransformConfigModal({ open, onClose, mapping, transforms, onSave }: Tr
 }
 
 export function MappingEditor() {
-  const { sources, targetService, entityMappings, setEntityMappings } = useMigrationStore();
+  const {
+    sourceSchemas,
+    targetSchema,
+    entityMappings,
+    setEntityMappings,
+    addEntityMapping,
+  } = useMigrationStore();
 
-  const [sourceSchema, setSourceSchema] = useState<FieldSchema[]>([]);
-  const [targetSchema, setTargetSchema] = useState<FieldSchema[]>([]);
   const [transforms, setTransforms] = useState<TransformType[]>([]);
   const [activeField, setActiveField] = useState<FieldSchema | null>(null);
   const [configureMapping, setConfigureMapping] = useState<FieldMapping | null>(null);
-  const [selectedSourceEntity, setSelectedSourceEntity] = useState('');
-  const [selectedTargetEntity, setSelectedTargetEntity] = useState('');
+  const [selectedSourceKey, setSelectedSourceKey] = useState('');
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [aiSuggesting, setAiSuggesting] = useState(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
+  // Parse selected source key
+  const [selectedSourceService, selectedSourceEntity] = selectedSourceKey.split(':');
+  const selectedSourceSchema = sourceSchemas.find(
+    (s) => s.service === selectedSourceService && s.entity === selectedSourceEntity
+  );
+
   // Get current entity mapping
   const currentMapping = entityMappings.find(
-    (m) => m.source_entity === selectedSourceEntity && m.target_entity === selectedTargetEntity
+    (m) =>
+      m.source_service === selectedSourceService &&
+      m.source_entity === selectedSourceEntity &&
+      m.target_service === targetSchema?.service &&
+      m.target_entity === targetSchema?.entity
   );
   const fieldMappings = currentMapping?.field_mappings || [];
 
-  // Load schemas and transforms
+  // Load transforms
   useEffect(() => {
     const loadData = async () => {
-      // Load transforms
       const transformsRes = await mappingAPI.getTransformTypes();
       if (transformsRes.data) {
         setTransforms(transformsRes.data.transforms);
@@ -240,41 +255,13 @@ export function MappingEditor() {
     loadData();
   }, []);
 
-  // Load source schema when entity changes
+  // Auto-select first source schema
   useEffect(() => {
-    const loadSourceSchema = async () => {
-      if (!selectedSourceEntity || sources.length === 0) return;
-
-      const source = sources.find((s) => s.entity === selectedSourceEntity);
-      if (source) {
-        const res = await schemaAPI.getEntity(source.service, source.entity);
-        if (res.data) {
-          setSourceSchema(res.data.fields);
-        }
-      }
-    };
-    loadSourceSchema();
-  }, [selectedSourceEntity, sources]);
-
-  // Load target schema when entity changes
-  useEffect(() => {
-    const loadTargetSchema = async () => {
-      if (!selectedTargetEntity || !targetService) return;
-
-      const res = await schemaAPI.getEntity(targetService, selectedTargetEntity);
-      if (res.data) {
-        setTargetSchema(res.data.fields);
-      }
-    };
-    loadTargetSchema();
-  }, [selectedTargetEntity, targetService]);
-
-  // Auto-select first available entities
-  useEffect(() => {
-    if (sources.length > 0 && !selectedSourceEntity) {
-      setSelectedSourceEntity(sources[0].entity);
+    if (sourceSchemas.length > 0 && !selectedSourceKey) {
+      const first = sourceSchemas[0];
+      setSelectedSourceKey(`${first.service}:${first.entity}`);
     }
-  }, [sources, selectedSourceEntity]);
+  }, [sourceSchemas, selectedSourceKey]);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveField(event.active.data.current?.field);
@@ -284,13 +271,12 @@ export function MappingEditor() {
     setActiveField(null);
 
     const { active, over } = event;
-    if (!over) return;
+    if (!over || !targetSchema) return;
 
     const sourceField = active.data.current?.field as FieldSchema;
     const targetField = over.data.current?.field as FieldSchema;
 
     if (sourceField && targetField) {
-      // Create new mapping
       const newMapping: FieldMapping = {
         source_field: sourceField.name,
         target_field: targetField.name,
@@ -298,13 +284,15 @@ export function MappingEditor() {
         config: {},
       };
 
-      // Update entity mappings
       const existingIndex = entityMappings.findIndex(
-        (m) => m.source_entity === selectedSourceEntity && m.target_entity === selectedTargetEntity
+        (m) =>
+          m.source_service === selectedSourceService &&
+          m.source_entity === selectedSourceEntity &&
+          m.target_service === targetSchema.service &&
+          m.target_entity === targetSchema.entity
       );
 
       if (existingIndex >= 0) {
-        // Update existing entity mapping
         const updated = { ...entityMappings[existingIndex] };
         const fieldIndex = updated.field_mappings.findIndex((f) => f.target_field === targetField.name);
 
@@ -318,13 +306,11 @@ export function MappingEditor() {
         newEntityMappings[existingIndex] = updated;
         setEntityMappings(newEntityMappings);
       } else {
-        // Create new entity mapping
-        const source = sources.find((s) => s.entity === selectedSourceEntity);
         const newEntityMapping: EntityMapping = {
-          source_service: source?.service || '',
+          source_service: selectedSourceService,
           source_entity: selectedSourceEntity,
-          target_service: targetService,
-          target_entity: selectedTargetEntity,
+          target_service: targetSchema.service,
+          target_entity: targetSchema.entity,
           field_mappings: [newMapping],
         };
         setEntityMappings([...entityMappings, newEntityMapping]);
@@ -333,8 +319,14 @@ export function MappingEditor() {
   };
 
   const handleRemoveMapping = (targetField: string) => {
+    if (!targetSchema) return;
+
     const existingIndex = entityMappings.findIndex(
-      (m) => m.source_entity === selectedSourceEntity && m.target_entity === selectedTargetEntity
+      (m) =>
+        m.source_service === selectedSourceService &&
+        m.source_entity === selectedSourceEntity &&
+        m.target_service === targetSchema.service &&
+        m.target_entity === targetSchema.entity
     );
 
     if (existingIndex >= 0) {
@@ -348,8 +340,14 @@ export function MappingEditor() {
   };
 
   const handleUpdateMapping = (updatedMapping: FieldMapping) => {
+    if (!targetSchema) return;
+
     const existingIndex = entityMappings.findIndex(
-      (m) => m.source_entity === selectedSourceEntity && m.target_entity === selectedTargetEntity
+      (m) =>
+        m.source_service === selectedSourceService &&
+        m.source_entity === selectedSourceEntity &&
+        m.target_service === targetSchema.service &&
+        m.target_entity === targetSchema.entity
     );
 
     if (existingIndex >= 0) {
@@ -366,6 +364,59 @@ export function MappingEditor() {
     }
   };
 
+  const handleMappingGenerated = (mapping: EntityMapping) => {
+    // Check if mapping already exists
+    const existingIndex = entityMappings.findIndex(
+      (m) =>
+        m.source_service === mapping.source_service &&
+        m.source_entity === mapping.source_entity &&
+        m.target_service === mapping.target_service &&
+        m.target_entity === mapping.target_entity
+    );
+
+    if (existingIndex >= 0) {
+      const newEntityMappings = [...entityMappings];
+      newEntityMappings[existingIndex] = mapping;
+      setEntityMappings(newEntityMappings);
+    } else {
+      addEntityMapping(mapping);
+    }
+  };
+
+  const handleAiSuggestMappings = async () => {
+    if (!selectedSourceSchema || !targetSchema) return;
+
+    setAiSuggesting(true);
+    try {
+      const response = await fetch('/api/ai/suggest-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_schema: selectedSourceSchema,
+          target_schema: targetSchema,
+          existing_mappings: fieldMappings,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.mappings) {
+          handleMappingGenerated({
+            source_service: selectedSourceService,
+            source_entity: selectedSourceEntity,
+            target_service: targetSchema.service,
+            target_entity: targetSchema.entity,
+            field_mappings: result.mappings,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('AI suggestion failed:', error);
+    } finally {
+      setAiSuggesting(false);
+    }
+  };
+
   const getMappingForTarget = (targetField: string) => {
     return fieldMappings.find((m) => m.target_field === targetField);
   };
@@ -374,22 +425,53 @@ export function MappingEditor() {
     return fieldMappings.some((m) => m.source_field === sourceField);
   };
 
-  // Get unique source entities from sources
-  const sourceEntities = [...new Set(sources.map((s) => s.entity))];
-
-  // Target entities based on target service
-  const targetEntities =
-    targetService === 'chargebee'
-      ? ['Customer', 'Subscription']
-      : targetService === 'stripe'
-      ? ['Customer', 'Subscription', 'Invoice']
-      : targetService === 'salesforce'
-      ? ['Account', 'Contact']
-      : [];
+  // Source options for dropdown
+  const sourceOptions = sourceSchemas.map((s) => ({
+    value: `${s.service}:${s.entity}`,
+    label: `${s.service}.${s.entity}`,
+  }));
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="space-y-6">
+        {/* Header */}
+        <div>
+          <h2 className="text-xl font-semibold mb-2">Mapping Editor</h2>
+          <p className="text-[hsl(var(--muted-foreground))]">
+            Define how source fields map to target fields. Drag and drop or use AI to suggest mappings.
+          </p>
+        </div>
+
+        {/* Import Options */}
+        <Card className="bg-gradient-to-r from-[hsl(var(--primary))]/5 to-[hsl(var(--primary))]/10 border-[hsl(var(--primary))]/20">
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-start gap-3">
+                <Sparkles className="h-5 w-5 text-[hsl(var(--primary))] mt-0.5" />
+                <div>
+                  <h3 className="font-medium mb-1">AI-Powered Mapping</h3>
+                  <p className="text-sm text-[hsl(var(--muted-foreground))]">
+                    Import mappings from files or let AI suggest field mappings based on your schemas.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setShowImportModal(true)}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import Mapping
+                </Button>
+                <Button
+                  onClick={handleAiSuggestMappings}
+                  disabled={!selectedSourceSchema || !targetSchema || aiSuggesting}
+                >
+                  <Wand2 className="h-4 w-4 mr-2" />
+                  {aiSuggesting ? 'Suggesting...' : 'AI Suggest'}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Entity Selection */}
         <Card>
           <CardHeader>
@@ -399,38 +481,43 @@ export function MappingEditor() {
             <div className="grid grid-cols-2 gap-4">
               <Select
                 label="Source Entity"
-                options={sourceEntities.map((e) => ({ value: e, label: e }))}
-                value={selectedSourceEntity}
-                onChange={(e) => setSelectedSourceEntity(e.target.value)}
+                options={sourceOptions}
+                value={selectedSourceKey}
+                onChange={(e) => setSelectedSourceKey(e.target.value)}
                 placeholder="Select source entity"
               />
-              <Select
-                label="Target Entity"
-                options={targetEntities.map((e) => ({ value: e, label: e }))}
-                value={selectedTargetEntity}
-                onChange={(e) => setSelectedTargetEntity(e.target.value)}
-                placeholder="Select target entity"
-              />
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Target Entity</label>
+                <div className="flex items-center h-10 px-3 rounded-md border border-[hsl(var(--input))] bg-[hsl(var(--muted))]">
+                  {targetSchema ? (
+                    <span>{targetSchema.service}.{targetSchema.entity}</span>
+                  ) : (
+                    <span className="text-[hsl(var(--muted-foreground))]">No target schema defined</span>
+                  )}
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Field Mapping */}
-        {selectedSourceEntity && selectedTargetEntity && (
+        {selectedSourceSchema && targetSchema ? (
           <div className="grid grid-cols-2 gap-6">
             {/* Source Fields */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Source Fields</CardTitle>
+                <CardTitle className="text-base">
+                  Source: {selectedSourceService}.{selectedSourceEntity}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {sourceSchema.length === 0 ? (
+                  {selectedSourceSchema.fields.length === 0 ? (
                     <p className="text-sm text-[hsl(var(--muted-foreground))] text-center py-4">
-                      No schema available. Configure source to load fields.
+                      No fields in this schema.
                     </p>
                   ) : (
-                    sourceSchema.map((field) => (
+                    selectedSourceSchema.fields.map((field) => (
                       <DraggableField key={field.name} field={field} isMapped={isSourceMapped(field.name)} />
                     ))
                   )}
@@ -441,16 +528,18 @@ export function MappingEditor() {
             {/* Target Fields */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Target Fields</CardTitle>
+                <CardTitle className="text-base">
+                  Target: {targetSchema.service}.{targetSchema.entity}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {targetSchema.length === 0 ? (
+                  {targetSchema.fields.length === 0 ? (
                     <p className="text-sm text-[hsl(var(--muted-foreground))] text-center py-4">
-                      No schema available. Select target entity to load fields.
+                      No fields in target schema.
                     </p>
                   ) : (
-                    targetSchema.map((field) => (
+                    targetSchema.fields.map((field) => (
                       <DroppableTargetField
                         key={field.name}
                         field={field}
@@ -464,6 +553,18 @@ export function MappingEditor() {
               </CardContent>
             </Card>
           </div>
+        ) : (
+          <Card className="border-dashed">
+            <CardContent className="py-8 text-center">
+              <p className="text-[hsl(var(--muted-foreground))]">
+                {!selectedSourceSchema && !targetSchema
+                  ? 'Define source and target schemas in the Schemas tab first.'
+                  : !selectedSourceSchema
+                  ? 'Select a source entity to start mapping fields.'
+                  : 'Define a target schema in the Schemas tab first.'}
+              </p>
+            </CardContent>
+          </Card>
         )}
 
         {/* Summary */}
@@ -472,12 +573,18 @@ export function MappingEditor() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm">
-                  <span className="font-medium">{fieldMappings.length}</span> field mappings configured
+                  <span className="font-medium">{entityMappings.length}</span> entity mappings,{' '}
+                  <span className="font-medium">
+                    {entityMappings.reduce((sum, em) => sum + em.field_mappings.length, 0)}
+                  </span>{' '}
+                  field mappings total
                 </p>
-                <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                  {targetSchema.filter((f) => f.required && !getMappingForTarget(f.name)).length} required fields
-                  unmapped
-                </p>
+                {targetSchema && (
+                  <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                    {targetSchema.fields.filter((f) => f.required && !getMappingForTarget(f.name)).length} required
+                    fields unmapped in current view
+                  </p>
+                )}
               </div>
               <Button variant="outline" size="sm">
                 <Plus className="mr-2 h-4 w-4" />
@@ -504,6 +611,15 @@ export function MappingEditor() {
         mapping={configureMapping}
         transforms={transforms}
         onSave={handleUpdateMapping}
+      />
+
+      {/* Import Modal */}
+      <DataInputModal
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onMappingGenerated={handleMappingGenerated}
+        outputType="mapping"
+        existingSchemas={sourceSchemas}
       />
     </DndContext>
   );
