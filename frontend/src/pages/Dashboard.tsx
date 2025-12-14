@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus, Clock, CheckCircle, XCircle, Loader2, Trash2, Play, Database, GitBranch, GitMerge, ChevronDown, ChevronRight, ArrowRight, Edit2, Link2, Search, X } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Input } from '@/components/ui';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { Logo } from '@/components/Logo';
 import { migrationAPI } from '@/lib/api';
 import { useMigrationStore } from '@/store/migration';
 import type { Migration, EntitySchema, EntityMapping, FieldSchema } from '@/types/migration';
@@ -398,11 +399,13 @@ export function Dashboard() {
       <div className="mx-auto max-w-7xl px-4 py-8">
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Migrate Services</h1>
-            <p className="text-[hsl(var(--muted-foreground))]">
-              Manage schemas, mappings, and run data migrations
-            </p>
+          <div className="flex items-center gap-4">
+            <Logo size="lg" />
+            <div className="border-l pl-4 border-[hsl(var(--border))]">
+              <p className="text-[hsl(var(--muted-foreground))]">
+                Manage schemas, mappings, and run data migrations
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />

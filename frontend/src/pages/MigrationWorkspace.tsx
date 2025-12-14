@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Database, GitBranch, Play, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { Logo } from '@/components/Logo';
 import { SchemaPanel } from '@/components/SchemaPanel';
 import { MigrateTab } from '@/components/MigrateTab';
 import { SchemaBuilder } from '@/components/SchemaBuilder';
@@ -36,8 +37,8 @@ export function MigrationWorkspace() {
       {/* Header */}
       <header className="flex h-14 items-center justify-between border-b px-4">
         <div className="flex items-center gap-4">
-          <Link to="/" className="text-lg font-semibold hover:text-[hsl(var(--primary))]">
-            Migrate Services
+          <Link to="/" className="hover:opacity-80 transition-opacity">
+            <Logo size="sm" />
           </Link>
           {hasUnsavedChanges && (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
