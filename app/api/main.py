@@ -21,6 +21,7 @@ app.add_middleware(
         "https://smoothexit.to",
         "https://www.smoothexit.to",
         "https://smoothexit.vercel.app",
+        "https://api.smoothexit.to",
     ],
     allow_credentials=True,
     allow_methods=["*"],

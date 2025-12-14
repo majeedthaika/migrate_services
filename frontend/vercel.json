@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://smoothexit-api.onrender.com/api/:path*"
+      "destination": "https://api.smoothexit.to/api/:path*"
     },
     {
       "source": "/((?!assets/).*)",
