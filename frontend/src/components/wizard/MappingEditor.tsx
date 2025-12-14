@@ -90,9 +90,9 @@ function DroppableTargetField({ field, mapping, onConfigure, onRemove, showSourc
     >
       {mapping ? (
         <>
-          {showSourceLabel && mapping.source_service && (
-            <span className="text-xs bg-[hsl(var(--accent))] px-1.5 py-0.5 rounded">
-              {mapping.source_service}
+          {showSourceLabel && mapping.source_service && mapping.source_entity && (
+            <span className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded whitespace-nowrap">
+              {mapping.source_service}.{mapping.source_entity}
             </span>
           )}
           <span className="flex-1 font-medium">{mapping.source_field}</span>

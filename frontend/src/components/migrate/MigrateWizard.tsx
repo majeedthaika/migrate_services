@@ -28,12 +28,22 @@ export function MigrateWizard() {
     resetMigrationRun,
   } = useMigrationStore();
 
-  // Get unique source keys from selected mappings
+  // Get unique source keys from selected mappings (including additional_sources for multi-source joins)
   const selectedMappings = entityMappings.filter((_, index) =>
     selectedMappingKeys.includes(`mapping-${index}`)
   );
   const requiredSourceKeys = [...new Set(
-    selectedMappings.map(m => `${m.source_service}.${m.source_entity}`)
+    selectedMappings.flatMap(m => {
+      // Primary source
+      const sources = [`${m.source_service}.${m.source_entity}`];
+      // Additional sources for multi-source joins
+      if (m.additional_sources && m.additional_sources.length > 0) {
+        m.additional_sources.forEach(src => {
+          sources.push(`${src.service}.${src.entity}`);
+        });
+      }
+      return sources;
+    })
   )];
 
   // Validation for each step

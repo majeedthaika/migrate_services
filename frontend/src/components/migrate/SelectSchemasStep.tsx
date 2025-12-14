@@ -1,8 +1,11 @@
-import { CheckSquare, Square, Database } from 'lucide-react';
-import { Button, Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
+import { useState } from 'react';
+import { CheckSquare, Square, Database, Search, X } from 'lucide-react';
+import { Button, Card, CardContent, CardHeader, CardTitle, Input } from '@/components/ui';
 import { useMigrationStore } from '@/store/migration';
 
 export function SelectSchemasStep() {
+  const [searchQuery, setSearchQuery] = useState('');
+
   const {
     sourceSchemas,
     selectedSourceSchemaKeys,
@@ -10,20 +13,44 @@ export function SelectSchemasStep() {
     toggleSourceSchemaSelection,
   } = useMigrationStore();
 
-  const allSelected = sourceSchemas.length > 0 &&
-    sourceSchemas.every((s) => selectedSourceSchemaKeys.includes(`${s.service}.${s.entity}`));
+  // Filter schemas based on search query
+  const filteredSchemas = sourceSchemas.filter((schema) => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      schema.service.toLowerCase().includes(query) ||
+      schema.entity.toLowerCase().includes(query) ||
+      schema.description?.toLowerCase().includes(query) ||
+      schema.fields.some(f => f.name.toLowerCase().includes(query))
+    );
+  });
+
+  const allSelected = filteredSchemas.length > 0 &&
+    filteredSchemas.every((s) => selectedSourceSchemaKeys.includes(`${s.service}.${s.entity}`));
   const noneSelected = selectedSourceSchemaKeys.length === 0;
 
   const handleSelectAll = () => {
-    setSelectedSourceSchemaKeys(sourceSchemas.map((s) => `${s.service}.${s.entity}`));
+    const filteredKeys = filteredSchemas.map((s) => `${s.service}.${s.entity}`);
+    const existingKeys = selectedSourceSchemaKeys.filter(
+      key => !filteredSchemas.some(s => `${s.service}.${s.entity}` === key)
+    );
+    setSelectedSourceSchemaKeys([...existingKeys, ...filteredKeys]);
   };
 
   const handleDeselectAll = () => {
-    setSelectedSourceSchemaKeys([]);
+    if (searchQuery) {
+      // Only deselect filtered schemas
+      const filteredKeys = filteredSchemas.map((s) => `${s.service}.${s.entity}`);
+      setSelectedSourceSchemaKeys(
+        selectedSourceSchemaKeys.filter(key => !filteredKeys.includes(key))
+      );
+    } else {
+      setSelectedSourceSchemaKeys([]);
+    }
   };
 
   // Group schemas by service
-  const schemasByService = sourceSchemas.reduce((acc, schema) => {
+  const schemasByService = filteredSchemas.reduce((acc, schema) => {
     if (!acc[schema.service]) {
       acc[schema.service] = [];
     }
@@ -46,7 +73,7 @@ export function SelectSchemasStep() {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader>
+        <CardHeader className="space-y-4">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Select Source Schemas to Migrate</CardTitle>
             <div className="flex gap-2">
@@ -54,7 +81,7 @@ export function SelectSchemasStep() {
                 variant="outline"
                 size="sm"
                 onClick={handleSelectAll}
-                disabled={allSelected}
+                disabled={allSelected || filteredSchemas.length === 0}
               >
                 Select All
               </Button>
@@ -68,8 +95,30 @@ export function SelectSchemasStep() {
               </Button>
             </div>
           </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(var(--muted-foreground))]" />
+            <Input
+              placeholder="Search schemas by name, service, or field..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-9"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-6">
+          {filteredSchemas.length === 0 && searchQuery && (
+            <div className="py-8 text-center text-[hsl(var(--muted-foreground))]">
+              No schemas match "{searchQuery}"
+            </div>
+          )}
           {Object.entries(schemasByService).map(([service, schemas]) => (
             <div key={service}>
               <h3 className="text-sm font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wide mb-2">
