@@ -3,7 +3,6 @@
 import os
 import secrets
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Response, Request
@@ -13,8 +12,9 @@ from pydantic import BaseModel
 router = APIRouter()
 security = HTTPBasic()
 
-# Store credentials in a file (generated on first run)
-CREDENTIALS_FILE = Path(__file__).parent.parent.parent.parent / "data" / ".credentials"
+# Hardcoded admin credentials (use env vars to override in production)
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "smoothexit2024")
 
 # Session tokens (in-memory for simplicity, use Redis in production)
 _sessions: dict[str, datetime] = {}
@@ -39,40 +39,14 @@ class AuthStatus(BaseModel):
     username: Optional[str] = None
 
 
-def get_or_create_credentials() -> tuple[str, str]:
-    """Get existing credentials or create new ones."""
-    CREDENTIALS_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-    if CREDENTIALS_FILE.exists():
-        content = CREDENTIALS_FILE.read_text().strip()
-        if content:
-            lines = content.split('\n')
-            if len(lines) >= 2:
-                return lines[0], lines[1]
-
-    # Generate new secure password
-    username = "admin"
-    password = secrets.token_urlsafe(24)
-
-    CREDENTIALS_FILE.write_text(f"{username}\n{password}")
-    CREDENTIALS_FILE.chmod(0o600)  # Read/write only for owner
-
-    # Print to console on first creation
-    print("\n" + "=" * 60)
-    print("ADMIN CREDENTIALS GENERATED")
-    print("=" * 60)
-    print(f"Username: {username}")
-    print(f"Password: {password}")
-    print("=" * 60)
-    print("These credentials are stored in: data/.credentials")
-    print("=" * 60 + "\n")
-
-    return username, password
+def get_credentials() -> tuple[str, str]:
+    """Get admin credentials from env vars or hardcoded defaults."""
+    return ADMIN_USERNAME, ADMIN_PASSWORD
 
 
 def verify_credentials(username: str, password: str) -> bool:
     """Verify username and password."""
-    stored_user, stored_pass = get_or_create_credentials()
+    stored_user, stored_pass = get_credentials()
     return secrets.compare_digest(username, stored_user) and secrets.compare_digest(password, stored_pass)
 
 
@@ -148,10 +122,6 @@ async def auth_status(request: Request):
     """Check authentication status."""
     token = get_session_token(request)
     if token and verify_session_token(token):
-        stored_user, _ = get_or_create_credentials()
+        stored_user, _ = get_credentials()
         return AuthStatus(authenticated=True, username=stored_user)
     return AuthStatus(authenticated=False)
-
-
-# Initialize credentials on module load
-get_or_create_credentials()
