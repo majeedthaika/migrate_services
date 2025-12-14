@@ -3,28 +3,30 @@ import { ArrowRight, CheckCircle, Database, GitBranch, Upload, Zap, Shield, Cloc
 import { Button, Card, CardContent, Input } from '@/components/ui';
 import { Logo } from './Logo';
 
-// Service logo URLs from Simple Icons CDN and brand colors
-const SERVICE_LOGOS: Record<string, { logo: string; color: string }> = {
-  'Stripe': { logo: 'https://cdn.simpleicons.org/stripe', color: '#635BFF' },
-  'Chargebee': { logo: 'https://cdn.simpleicons.org/chargebee', color: '#FF6600' },
-  'Recurly': { logo: 'https://cdn.simpleicons.org/recurly', color: '#F5447A' },
-  'Zuora': { logo: 'https://cdn.simpleicons.org/zuora', color: '#003399' },
-  'Paddle': { logo: 'https://cdn.simpleicons.org/paddle', color: '#FFCC00' },
-  'Salesforce': { logo: 'https://cdn.simpleicons.org/salesforce', color: '#00A1E0' },
-  'HubSpot': { logo: 'https://cdn.simpleicons.org/hubspot', color: '#FF7A59' },
-  'Pipedrive': { logo: 'https://cdn.simpleicons.org/pipedrive', color: '#1A1A1A' },
-  'Zoho': { logo: 'https://cdn.simpleicons.org/zoho', color: '#C8202B' },
-  'Braintree': { logo: 'https://cdn.simpleicons.org/braintree', color: '#000000' },
-  'Adyen': { logo: 'https://cdn.simpleicons.org/adyen', color: '#0ABF53' },
-  'Square': { logo: 'https://cdn.simpleicons.org/square', color: '#3E4348' },
-  'PayPal': { logo: 'https://cdn.simpleicons.org/paypal', color: '#003087' },
-  'Shopify': { logo: 'https://cdn.simpleicons.org/shopify', color: '#7AB55C' },
-  'WooCommerce': { logo: 'https://cdn.simpleicons.org/woocommerce', color: '#96588A' },
-  'BigCommerce': { logo: 'https://cdn.simpleicons.org/bigcommerce', color: '#121118' },
-  'Magento': { logo: 'https://cdn.simpleicons.org/magento', color: '#EE672F' },
-  'PostgreSQL': { logo: 'https://cdn.simpleicons.org/postgresql', color: '#4169E1' },
-  'MySQL': { logo: 'https://cdn.simpleicons.org/mysql', color: '#4479A1' },
-  'MongoDB': { logo: 'https://cdn.simpleicons.org/mongodb', color: '#47A248' },
+// Service logo URLs - using Simple Icons CDN where available, Google Favicons as fallback
+const SERVICE_LOGOS: Record<string, { logo: string; type: 'svg' | 'favicon' }> = {
+  // Simple Icons (SVG)
+  'Stripe': { logo: 'https://cdn.simpleicons.org/stripe', type: 'svg' },
+  'Paddle': { logo: 'https://cdn.simpleicons.org/paddle', type: 'svg' },
+  'Salesforce': { logo: 'https://cdn.simpleicons.org/salesforce', type: 'svg' },
+  'HubSpot': { logo: 'https://cdn.simpleicons.org/hubspot', type: 'svg' },
+  'Zoho': { logo: 'https://cdn.simpleicons.org/zoho', type: 'svg' },
+  'Braintree': { logo: 'https://cdn.simpleicons.org/braintree', type: 'svg' },
+  'Adyen': { logo: 'https://cdn.simpleicons.org/adyen', type: 'svg' },
+  'Square': { logo: 'https://cdn.simpleicons.org/square', type: 'svg' },
+  'PayPal': { logo: 'https://cdn.simpleicons.org/paypal', type: 'svg' },
+  'Shopify': { logo: 'https://cdn.simpleicons.org/shopify', type: 'svg' },
+  'WooCommerce': { logo: 'https://cdn.simpleicons.org/woocommerce', type: 'svg' },
+  'BigCommerce': { logo: 'https://cdn.simpleicons.org/bigcommerce', type: 'svg' },
+  'PostgreSQL': { logo: 'https://cdn.simpleicons.org/postgresql', type: 'svg' },
+  'MySQL': { logo: 'https://cdn.simpleicons.org/mysql', type: 'svg' },
+  'MongoDB': { logo: 'https://cdn.simpleicons.org/mongodb', type: 'svg' },
+  // Google Favicons (PNG) - for services not on Simple Icons
+  'Chargebee': { logo: 'https://www.google.com/s2/favicons?domain=chargebee.com&sz=64', type: 'favicon' },
+  'Recurly': { logo: 'https://www.google.com/s2/favicons?domain=recurly.com&sz=64', type: 'favicon' },
+  'Zuora': { logo: 'https://www.google.com/s2/favicons?domain=zuora.com&sz=64', type: 'favicon' },
+  'Pipedrive': { logo: 'https://www.google.com/s2/favicons?domain=pipedrive.com&sz=64', type: 'favicon' },
+  'Magento': { logo: 'https://www.google.com/s2/favicons?domain=magento.com&sz=64', type: 'favicon' },
 };
 
 // Component for service logo with fallback
