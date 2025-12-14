@@ -1,4 +1,4 @@
-import { ArrowRight, CheckSquare, Square } from 'lucide-react';
+import { ArrowRight, CheckSquare, Square, AlertCircle } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { useMigrationStore } from '@/store/migration';
 
@@ -8,14 +8,29 @@ export function SelectMappingsStep() {
     selectedMappingKeys,
     setSelectedMappingKeys,
     toggleMappingSelection,
+    selectedSourceSchemaKeys,
   } = useMigrationStore();
 
-  const allSelected = entityMappings.length > 0 &&
-    entityMappings.every((_, index) => selectedMappingKeys.includes(`mapping-${index}`));
+  // Filter mappings to only show those where the source entity is in selectedSourceSchemaKeys
+  const availableMappings = entityMappings.filter((mapping) => {
+    const sourceKey = `${mapping.source_service}.${mapping.source_entity}`;
+    return selectedSourceSchemaKeys.includes(sourceKey);
+  });
+
+  // Get indices of available mappings in the original array
+  const availableMappingIndices = entityMappings
+    .map((mapping, index) => {
+      const sourceKey = `${mapping.source_service}.${mapping.source_entity}`;
+      return selectedSourceSchemaKeys.includes(sourceKey) ? index : -1;
+    })
+    .filter(index => index !== -1);
+
+  const allSelected = availableMappings.length > 0 &&
+    availableMappingIndices.every(index => selectedMappingKeys.includes(`mapping-${index}`));
   const noneSelected = selectedMappingKeys.length === 0;
 
   const handleSelectAll = () => {
-    setSelectedMappingKeys(entityMappings.map((_, index) => `mapping-${index}`));
+    setSelectedMappingKeys(availableMappingIndices.map(index => `mapping-${index}`));
   };
 
   const handleDeselectAll = () => {
@@ -30,12 +45,29 @@ export function SelectMappingsStep() {
     selectedMappings.map(m => `${m.target_service}.${m.target_entity}`)
   )];
 
-  if (entityMappings.length === 0) {
+  if (selectedSourceSchemaKeys.length === 0) {
     return (
       <Card>
         <CardContent className="py-12 text-center">
+          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-[hsl(var(--muted-foreground))]" />
           <p className="text-[hsl(var(--muted-foreground))]">
-            No entity mappings configured. Please create mappings in the Mappings tab first.
+            No source schemas selected. Please go back and select at least one source schema.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (availableMappings.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-[hsl(var(--muted-foreground))]" />
+          <p className="text-[hsl(var(--muted-foreground))]">
+            No mappings available for the selected source schemas.
+          </p>
+          <p className="text-sm text-[hsl(var(--muted-foreground))] mt-2">
+            Create mappings in the Mappings tab that use: {selectedSourceSchemaKeys.join(', ')}
           </p>
         </CardContent>
       </Card>
@@ -69,8 +101,15 @@ export function SelectMappingsStep() {
           </div>
         </CardHeader>
         <CardContent className="space-y-2">
-          {entityMappings.map((mapping, index) => {
-            const key = `mapping-${index}`;
+          {availableMappings.map((mapping) => {
+            // Find the original index in entityMappings
+            const originalIndex = entityMappings.findIndex(
+              m => m.source_service === mapping.source_service &&
+                   m.source_entity === mapping.source_entity &&
+                   m.target_service === mapping.target_service &&
+                   m.target_entity === mapping.target_entity
+            );
+            const key = `mapping-${originalIndex}`;
             const isSelected = selectedMappingKeys.includes(key);
             const fieldCount = mapping.field_mappings.length;
 

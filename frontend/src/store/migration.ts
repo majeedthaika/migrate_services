@@ -104,16 +104,21 @@ interface MigrationWorkspaceState {
   discardSchemaChanges: () => void;
   discardMappingChanges: () => void;
 
-  // Migration Run State (for the 4-step migration wizard)
-  migrationRunStep: 1 | 2 | 3 | 4;
-  setMigrationRunStep: (step: 1 | 2 | 3 | 4) => void;
+  // Migration Run State (for the 5-step migration wizard)
+  migrationRunStep: 1 | 2 | 3 | 4 | 5;
+  setMigrationRunStep: (step: 1 | 2 | 3 | 4 | 5) => void;
 
-  // Step 1: Selected mappings
+  // Step 1: Selected source schemas
+  selectedSourceSchemaKeys: string[];
+  setSelectedSourceSchemaKeys: (keys: string[]) => void;
+  toggleSourceSchemaSelection: (key: string) => void;
+
+  // Step 2: Selected mappings (filtered by selected schemas)
   selectedMappingKeys: string[];
   setSelectedMappingKeys: (keys: string[]) => void;
   toggleMappingSelection: (key: string) => void;
 
-  // Step 2: Uploaded source data
+  // Step 3: Uploaded source data
   uploadedSourceData: Record<string, {
     fileName: string;
     data: Record<string, unknown>[];
@@ -128,7 +133,7 @@ interface MigrationWorkspaceState {
   }) => void;
   clearUploadedSourceData: () => void;
 
-  // Step 3: Transformation
+  // Step 4: Transformation
   transformMode: 'sample' | 'full';
   setTransformMode: (mode: 'sample' | 'full') => void;
   sampleSize: number;
@@ -138,7 +143,7 @@ interface MigrationWorkspaceState {
   transformErrors: { entity: string; row: number; error: string }[];
   setTransformErrors: (errors: { entity: string; row: number; error: string }[]) => void;
 
-  // Step 4: Upload to target
+  // Step 5: Upload to target
   uploadProgress: {
     total: number;
     processed: number;
@@ -2576,7 +2581,8 @@ const initialState = {
   savedEntityMappings: seedEntityMappings,
 
   // Migration Run State
-  migrationRunStep: 1 as 1 | 2 | 3 | 4,
+  migrationRunStep: 1 as 1 | 2 | 3 | 4 | 5,
+  selectedSourceSchemaKeys: [] as string[],
   selectedMappingKeys: [] as string[],
   uploadedSourceData: {} as Record<string, {
     fileName: string;
@@ -2713,6 +2719,14 @@ export const useMigrationStore = create<MigrationWorkspaceState>((set) => ({
   // Migration Run State
   setMigrationRunStep: (migrationRunStep) => set({ migrationRunStep }),
 
+  setSelectedSourceSchemaKeys: (selectedSourceSchemaKeys) => set({ selectedSourceSchemaKeys }),
+  toggleSourceSchemaSelection: (key) =>
+    set((state) => ({
+      selectedSourceSchemaKeys: state.selectedSourceSchemaKeys.includes(key)
+        ? state.selectedSourceSchemaKeys.filter((k) => k !== key)
+        : [...state.selectedSourceSchemaKeys, key],
+    })),
+
   setSelectedMappingKeys: (selectedMappingKeys) => set({ selectedMappingKeys }),
   toggleMappingSelection: (key) =>
     set((state) => ({
@@ -2743,6 +2757,7 @@ export const useMigrationStore = create<MigrationWorkspaceState>((set) => ({
   resetMigrationRun: () =>
     set({
       migrationRunStep: 1,
+      selectedSourceSchemaKeys: [],
       selectedMappingKeys: [],
       uploadedSourceData: {},
       transformMode: 'sample',

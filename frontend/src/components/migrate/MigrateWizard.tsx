@@ -1,22 +1,25 @@
 import { Check, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { useMigrationStore } from '@/store/migration';
+import { SelectSchemasStep } from './SelectSchemasStep';
 import { SelectMappingsStep } from './SelectMappingsStep';
 import { UploadSourcesStep } from './UploadSourcesStep';
 import { TransformStep } from './TransformStep';
 import { UploadTargetStep } from './UploadTargetStep';
 
 const STEPS = [
-  { id: 1 as const, label: 'Select Mappings', description: 'Choose source schemas and mappings' },
-  { id: 2 as const, label: 'Upload Data', description: 'Upload CSV files for each source' },
-  { id: 3 as const, label: 'Transform', description: 'Preview and run transformation' },
-  { id: 4 as const, label: 'Upload to Target', description: 'Send data to target service' },
+  { id: 1 as const, label: 'Select Schemas', description: 'Choose source schemas to migrate' },
+  { id: 2 as const, label: 'Select Mappings', description: 'Choose mappings to run' },
+  { id: 3 as const, label: 'Upload Data', description: 'Upload CSV files for each source' },
+  { id: 4 as const, label: 'Transform', description: 'Preview and run transformation' },
+  { id: 5 as const, label: 'Upload to Target', description: 'Send data to target service' },
 ];
 
 export function MigrateWizard() {
   const {
     migrationRunStep,
     setMigrationRunStep,
+    selectedSourceSchemaKeys,
     selectedMappingKeys,
     uploadedSourceData,
     entityMappings,
@@ -34,30 +37,32 @@ export function MigrateWizard() {
   )];
 
   // Validation for each step
-  const canProceedFromStep1 = selectedMappingKeys.length > 0;
-  const canProceedFromStep2 = requiredSourceKeys.every(key => uploadedSourceData[key]);
-  const canProceedFromStep3 = Object.keys(transformedData).length > 0;
-  const isStep4Complete = uploadStatus === 'completed';
+  const canProceedFromStep1 = selectedSourceSchemaKeys.length > 0;
+  const canProceedFromStep2 = selectedMappingKeys.length > 0;
+  const canProceedFromStep3 = requiredSourceKeys.every(key => uploadedSourceData[key]);
+  const canProceedFromStep4 = Object.keys(transformedData).length > 0;
+  const isStep5Complete = uploadStatus === 'completed';
 
   const canProceed = () => {
     switch (migrationRunStep) {
       case 1: return canProceedFromStep1;
       case 2: return canProceedFromStep2;
       case 3: return canProceedFromStep3;
-      case 4: return isStep4Complete;
+      case 4: return canProceedFromStep4;
+      case 5: return isStep5Complete;
       default: return false;
     }
   };
 
   const handleNext = () => {
-    if (migrationRunStep < 4 && canProceed()) {
-      setMigrationRunStep((migrationRunStep + 1) as 1 | 2 | 3 | 4);
+    if (migrationRunStep < 5 && canProceed()) {
+      setMigrationRunStep((migrationRunStep + 1) as 1 | 2 | 3 | 4 | 5);
     }
   };
 
   const handleBack = () => {
     if (migrationRunStep > 1) {
-      setMigrationRunStep((migrationRunStep - 1) as 1 | 2 | 3 | 4);
+      setMigrationRunStep((migrationRunStep - 1) as 1 | 2 | 3 | 4 | 5);
     }
   };
 
@@ -70,12 +75,14 @@ export function MigrateWizard() {
   const renderStepContent = () => {
     switch (migrationRunStep) {
       case 1:
-        return <SelectMappingsStep />;
+        return <SelectSchemasStep />;
       case 2:
-        return <UploadSourcesStep requiredSourceKeys={requiredSourceKeys} />;
+        return <SelectMappingsStep />;
       case 3:
-        return <TransformStep selectedMappings={selectedMappings} />;
+        return <UploadSourcesStep requiredSourceKeys={requiredSourceKeys} />;
       case 4:
+        return <TransformStep selectedMappings={selectedMappings} />;
+      case 5:
         return <UploadTargetStep />;
       default:
         return null;
@@ -165,7 +172,7 @@ export function MigrateWizard() {
           <ChevronLeft className="h-4 w-4 mr-2" />
           Back
         </Button>
-        {migrationRunStep < 4 ? (
+        {migrationRunStep < 5 ? (
           <Button
             onClick={handleNext}
             disabled={!canProceed()}
@@ -179,7 +186,7 @@ export function MigrateWizard() {
             onClick={handleReset}
             disabled={uploadStatus === 'running'}
           >
-            {isStep4Complete ? 'Start New Migration' : 'Cancel'}
+            {isStep5Complete ? 'Start New Migration' : 'Cancel'}
           </Button>
         )}
       </div>
