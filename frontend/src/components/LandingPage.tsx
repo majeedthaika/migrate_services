@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { ArrowRight, CheckCircle, Database, GitBranch, Upload, Zap, Shield, Clock, ChevronDown, FileSpreadsheet, Globe } from 'lucide-react';
+import { ArrowRight, CheckCircle, Database, GitBranch, Upload, Zap, Shield, Clock, ChevronDown, FileSpreadsheet, Globe, Sun, Moon, Monitor } from 'lucide-react';
 import { Button, Card, CardContent, Input } from '@/components/ui';
 import { Logo } from './Logo';
+import { useTheme } from './ThemeProvider';
 
 // Service logo URLs - using Simple Icons CDN where available, Google Favicons as fallback
 const SERVICE_LOGOS: Record<string, { logo: string; type: 'svg' | 'favicon' }> = {
@@ -109,6 +110,7 @@ const TESTIMONIALS = [
 ];
 
 export function LandingPage() {
+  const { theme, setTheme } = useTheme();
   const [formData, setFormData] = useState({
     email: '',
     company: '',
@@ -397,6 +399,29 @@ export function LandingPage() {
             <a href="/app" className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]">
               Login
             </a>
+            <div className="flex items-center gap-1 border border-[hsl(var(--border))] rounded-lg p-1">
+              <button
+                onClick={() => setTheme('light')}
+                className={`p-1.5 rounded-md transition-colors ${theme === 'light' ? 'bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'}`}
+                title="Light mode"
+              >
+                <Sun className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setTheme('dark')}
+                className={`p-1.5 rounded-md transition-colors ${theme === 'dark' ? 'bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'}`}
+                title="Dark mode"
+              >
+                <Moon className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setTheme('system')}
+                className={`p-1.5 rounded-md transition-colors ${theme === 'system' ? 'bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'}`}
+                title="System theme"
+              >
+                <Monitor className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
       </footer>
