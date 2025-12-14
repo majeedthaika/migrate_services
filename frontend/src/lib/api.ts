@@ -130,6 +130,15 @@ export const schemaAPI = {
     });
     return handleResponse(response);
   },
+
+  async saveAll(schemas: EntitySchema[]): Promise<ApiResponse<{ status: string; count: number }>> {
+    const response = await fetch(`${API_URL}/schemas/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schemas }),
+    });
+    return handleResponse(response);
+  },
 };
 
 // Mapping API
@@ -164,6 +173,22 @@ export const mappingAPI = {
 
   async getTransformTypes(): Promise<ApiResponse<{ transforms: TransformType[] }>> {
     const response = await fetch(`${API_URL}/mappings/transforms/types`);
+    return handleResponse(response);
+  },
+
+  async saveAll(mappings: {
+    name: string;
+    source_service: string;
+    source_entity: string;
+    target_service: string;
+    target_entity: string;
+    field_mappings: FieldMapping[];
+  }[]): Promise<ApiResponse<{ status: string; count: number }>> {
+    const response = await fetch(`${API_URL}/mappings/save-all`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mappings }),
+    });
     return handleResponse(response);
   },
 };

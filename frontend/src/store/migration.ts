@@ -15,8 +15,9 @@ interface MigrationWorkspaceState {
   description: string;
   setDescription: (description: string) => void;
 
-  // All available schemas (read-only reference data)
+  // All available schemas (reference data)
   availableSchemas: EntitySchema[];
+  removeAvailableSchema: (service: string, entity: string) => void;
 
   // Schemas (schema-first approach)
   sourceSchemas: EntitySchema[];
@@ -83,6 +84,12 @@ interface MigrationWorkspaceState {
   // Schema focus state (for navigating from sidebar to schema builder)
   focusedSchema: { service: string; entity: string } | null;
   setFocusedSchema: (schema: { service: string; entity: string } | null) => void;
+
+  // Dirty state tracking (unsaved changes)
+  schemasModified: boolean;
+  setSchemasModified: (modified: boolean) => void;
+  mappingsModified: boolean;
+  setMappingsModified: (modified: boolean) => void;
 
   // Reset workspace
   reset: () => void;
@@ -2482,6 +2489,8 @@ const initialState = {
   chatMessages: [] as ChatMessage[],
   schemaPanelCollapsed: false,
   focusedSchema: null as { service: string; entity: string } | null,
+  schemasModified: false,
+  mappingsModified: false,
 };
 
 export const useMigrationStore = create<MigrationWorkspaceState>((set) => ({
@@ -2492,24 +2501,34 @@ export const useMigrationStore = create<MigrationWorkspaceState>((set) => ({
   setName: (name) => set({ name }),
   setDescription: (description) => set({ description }),
 
+  // Available schemas management
+  removeAvailableSchema: (service, entity) =>
+    set((state) => ({
+      availableSchemas: state.availableSchemas.filter(
+        (s) => !(s.service === service && s.entity === entity)
+      ),
+    })),
+
   // Schema management
-  setSourceSchemas: (sourceSchemas) => set({ sourceSchemas }),
+  setSourceSchemas: (sourceSchemas) => set({ sourceSchemas, schemasModified: true }),
   addSourceSchema: (schema) =>
-    set((state) => ({ sourceSchemas: [...state.sourceSchemas, schema] })),
+    set((state) => ({ sourceSchemas: [...state.sourceSchemas, schema], schemasModified: true })),
   updateSourceSchema: (service, entity, schema) =>
     set((state) => ({
       sourceSchemas: state.sourceSchemas.map((s) =>
         s.service === service && s.entity === entity ? schema : s
       ),
+      schemasModified: true,
     })),
   removeSourceSchema: (service, entity) =>
     set((state) => ({
       sourceSchemas: state.sourceSchemas.filter(
         (s) => !(s.service === service && s.entity === entity)
       ),
+      schemasModified: true,
     })),
 
-  setTargetSchema: (targetSchema) => set({ targetSchema }),
+  setTargetSchema: (targetSchema) => set({ targetSchema, schemasModified: true }),
 
   // Source management
   addSource: (source) =>
@@ -2529,18 +2548,20 @@ export const useMigrationStore = create<MigrationWorkspaceState>((set) => ({
   setTargetApiKey: (targetApiKey) => set({ targetApiKey }),
 
   // Mapping management
-  setEntityMappings: (entityMappings) => set({ entityMappings }),
+  setEntityMappings: (entityMappings) => set({ entityMappings, mappingsModified: true }),
   addEntityMapping: (mapping) =>
-    set((state) => ({ entityMappings: [...state.entityMappings, mapping] })),
+    set((state) => ({ entityMappings: [...state.entityMappings, mapping], mappingsModified: true })),
   updateEntityMapping: (index, mapping) =>
     set((state) => ({
       entityMappings: state.entityMappings.map((m, i) =>
         i === index ? mapping : m
       ),
+      mappingsModified: true,
     })),
   removeEntityMapping: (index) =>
     set((state) => ({
       entityMappings: state.entityMappings.filter((_, i) => i !== index),
+      mappingsModified: true,
     })),
 
   setDryRun: (dryRun) => set({ dryRun }),
@@ -2558,6 +2579,10 @@ export const useMigrationStore = create<MigrationWorkspaceState>((set) => ({
   setSchemaPanelCollapsed: (schemaPanelCollapsed) => set({ schemaPanelCollapsed }),
 
   setFocusedSchema: (focusedSchema) => set({ focusedSchema }),
+
+  // Dirty state management
+  setSchemasModified: (schemasModified) => set({ schemasModified }),
+  setMappingsModified: (mappingsModified) => set({ mappingsModified }),
 
   reset: () => set(initialState),
 }));

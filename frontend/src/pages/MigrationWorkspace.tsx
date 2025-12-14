@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Database, GitBranch, Play, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Database, GitBranch, Play, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SchemaPanel } from '@/components/SchemaPanel';
@@ -15,7 +15,8 @@ const TABS = [
 ];
 
 export function MigrationWorkspace() {
-  const { activeTab, setActiveTab, schemaPanelCollapsed, setSchemaPanelCollapsed } = useMigrationStore();
+  const { activeTab, setActiveTab, schemaPanelCollapsed, setSchemaPanelCollapsed, schemasModified, mappingsModified } = useMigrationStore();
+  const hasUnsavedChanges = schemasModified || mappingsModified;
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -38,6 +39,12 @@ export function MigrationWorkspace() {
           <Link to="/" className="text-lg font-semibold hover:text-[hsl(var(--primary))]">
             Migrate Services
           </Link>
+          {hasUnsavedChanges && (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <AlertCircle className="h-4 w-4" />
+              <span className="text-sm font-medium">Unsaved changes</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />

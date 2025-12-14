@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Trash2, Edit2, Check, X, ChevronDown, ChevronRight, Upload, Sparkles, Database, Search } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, ChevronDown, ChevronRight, Upload, Sparkles, Database, Search, Save, Loader2 } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Select } from '@/components/ui';
 import { DataInputModal } from '@/components/DataInputModal';
 import { useMigrationStore } from '@/store/migration';
+import { schemaAPI } from '@/lib/api';
 import type { EntitySchema, FieldSchema } from '@/types/migration';
 
 // Helper to highlight search matches
@@ -299,6 +300,7 @@ function SchemaEditorCard({ schema, isTarget, onUpdate, onDelete }: SchemaEditor
 export function SchemaBuilder() {
   const {
     availableSchemas,
+    removeAvailableSchema,
     sourceSchemas,
     targetSchema,
     addSourceSchema,
@@ -307,14 +309,17 @@ export function SchemaBuilder() {
     setTargetSchema,
     focusedSchema,
     setFocusedSchema,
+    schemasModified,
+    setSchemasModified,
   } = useMigrationStore();
 
   const [showImportModal, setShowImportModal] = useState(false);
   const [importTarget, setImportTarget] = useState<'source' | 'target'>('source');
   const [showSchemaPicker, setShowSchemaPicker] = useState(false);
-  const [pickerTarget, setPickerTarget] = useState<'source' | 'target'>('source');
   const [pickerSearchTerm, setPickerSearchTerm] = useState('');
-  const [selectedForAdd, setSelectedForAdd] = useState<Set<string>>(new Set());
+  const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Refs for scrolling to schemas
   const schemaRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -364,45 +369,31 @@ export function SchemaBuilder() {
     return filtered;
   }, [schemasByService, pickerSearchTerm]);
 
-  const handlePickSchema = (schema: EntitySchema) => {
-    const key = `${schema.service}:${schema.entity}`;
-    if (pickerTarget === 'source') {
-      // Toggle selection for multi-select
-      const newSelected = new Set(selectedForAdd);
-      if (newSelected.has(key)) {
-        newSelected.delete(key);
-      } else {
-        newSelected.add(key);
-      }
-      setSelectedForAdd(newSelected);
-    } else {
-      setTargetSchema(schema);
-      setShowSchemaPicker(false);
-    }
-  };
-
-  const handleAddSelectedSchemas = () => {
-    selectedForAdd.forEach(key => {
-      const [service, entity] = key.split(':');
-      const schema = availableSchemas.find(s => s.service === service && s.entity === entity);
-      if (schema) {
-        const exists = sourceSchemas.some(
-          (s) => s.service === schema.service && s.entity === schema.entity
-        );
-        if (!exists) {
-          addSourceSchema(schema);
-        }
-      }
-    });
-    setSelectedForAdd(new Set());
-    setShowSchemaPicker(false);
-  };
-
-  const openSourcePicker = () => {
-    setPickerTarget('source');
+  const openSchemaBrowser = () => {
     setPickerSearchTerm('');
-    setSelectedForAdd(new Set());
+    setSelectedForDelete(new Set());
     setShowSchemaPicker(true);
+  };
+
+  const handleToggleSchemaSelection = (service: string, entity: string) => {
+    const key = `${service}:${entity}`;
+    const newSelected = new Set(selectedForDelete);
+    if (newSelected.has(key)) {
+      newSelected.delete(key);
+    } else {
+      newSelected.add(key);
+    }
+    setSelectedForDelete(newSelected);
+  };
+
+  const handleDeleteSelectedSchemas = () => {
+    selectedForDelete.forEach(key => {
+      const [service, entity] = key.split(':');
+      removeAvailableSchema(service, entity);
+      // Also remove from source schemas if it was added there
+      removeSourceSchema(service, entity);
+    });
+    setSelectedForDelete(new Set());
   };
 
   const handleImportSource = () => {
@@ -431,14 +422,58 @@ export function SchemaBuilder() {
     }
   };
 
+  const handleSaveSchemas = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      // Combine source schemas and target schema for saving
+      const allSchemas = [...sourceSchemas];
+      if (targetSchema) {
+        allSchemas.push(targetSchema);
+      }
+      const result = await schemaAPI.saveAll(allSchemas);
+      if (result.error) {
+        setSaveError(result.error);
+      } else {
+        setSchemasModified(false);
+      }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save schemas');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div>
-        <h2 className="text-xl font-semibold mb-2">Schema Builder</h2>
-        <p className="text-[hsl(var(--muted-foreground))]">
-          Import schemas from files, APIs, screenshots, or web pages. AI will help transform your data into structured schemas.
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-xl font-semibold mb-2">Schema Builder</h2>
+          <p className="text-[hsl(var(--muted-foreground))]">
+            Import schemas from files, APIs, screenshots, or web pages. AI will help transform your data into structured schemas.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {schemasModified && (
+            <span className="text-sm text-amber-600 dark:text-amber-400">Unsaved changes</span>
+          )}
+          {saveError && (
+            <span className="text-sm text-[hsl(var(--destructive))]">{saveError}</span>
+          )}
+          <Button
+            onClick={handleSaveSchemas}
+            disabled={saving || !schemasModified}
+            variant={schemasModified ? 'primary' : 'outline'}
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-2" />
+            )}
+            {saving ? 'Saving...' : 'Save Schemas'}
+          </Button>
+        </div>
       </div>
 
       {/* Import Options Info */}
@@ -483,7 +518,7 @@ export function SchemaBuilder() {
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-medium">Source Schemas ({sourceSchemas.length})</h3>
           <div className="flex gap-2">
-            <Button onClick={openSourcePicker} variant="outline">
+            <Button onClick={openSchemaBrowser} variant="outline">
               <Database className="h-4 w-4 mr-2" />
               Browse Schemas
             </Button>
@@ -499,13 +534,13 @@ export function SchemaBuilder() {
               <Database className="h-8 w-8 mx-auto mb-3 text-[hsl(var(--muted-foreground))]" />
               <p className="text-[hsl(var(--muted-foreground))] mb-3">No source schemas defined.</p>
               <div className="flex gap-2 justify-center">
-                <Button onClick={openSourcePicker} variant="outline">
+                <Button onClick={openSchemaBrowser} variant="outline">
                   <Database className="h-4 w-4 mr-2" />
                   Browse Available Schemas
                 </Button>
                 <Button onClick={handleImportSource}>
                   <Upload className="h-4 w-4 mr-2" />
-                  Import Schema Schema
+                  Import Schema
                 </Button>
               </div>
             </CardContent>
@@ -589,7 +624,7 @@ export function SchemaBuilder() {
         )}
       </div>
 
-      {/* Schema Picker Modal */}
+      {/* Schema Browser Modal */}
       {showSchemaPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
@@ -599,12 +634,10 @@ export function SchemaBuilder() {
           <Card className="relative z-10 w-full max-w-2xl max-h-[80vh] overflow-hidden">
             <CardHeader className="border-b">
               <div className="flex items-center justify-between">
-                <CardTitle>
-                  {pickerTarget === 'source' ? 'Browse & Select Source Schemas' : 'Select Target Schema'}
-                </CardTitle>
-                {pickerTarget === 'source' && selectedForAdd.size > 0 && (
-                  <span className="text-sm bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))] px-2 py-1 rounded">
-                    {selectedForAdd.size} selected
+                <CardTitle>Browse Available Schemas</CardTitle>
+                {selectedForDelete.size > 0 && (
+                  <span className="text-sm bg-[hsl(var(--destructive))]/10 text-[hsl(var(--destructive))] px-2 py-1 rounded">
+                    {selectedForDelete.size} selected
                   </span>
                 )}
               </div>
@@ -638,60 +671,48 @@ export function SchemaBuilder() {
                   <div key={service} className="border-b last:border-b-0">
                     <div className="px-4 py-2 bg-[hsl(var(--muted))] font-medium capitalize flex items-center justify-between">
                       <span>{service} ({schemas.length} entities)</span>
-                      {pickerTarget === 'source' && (
-                        <button
-                          onClick={() => {
-                            const serviceSchemaKeys = schemas.map(s => `${s.service}:${s.entity}`);
-                            const allSelected = serviceSchemaKeys.every(k => selectedForAdd.has(k));
-                            const newSelected = new Set(selectedForAdd);
-                            if (allSelected) {
-                              serviceSchemaKeys.forEach(k => newSelected.delete(k));
-                            } else {
-                              serviceSchemaKeys.forEach(k => newSelected.add(k));
-                            }
-                            setSelectedForAdd(newSelected);
-                          }}
-                          className="text-xs text-[hsl(var(--primary))] hover:underline"
-                        >
-                          {schemas.every(s => selectedForAdd.has(`${s.service}:${s.entity}`)) ? 'Deselect all' : 'Select all'}
-                        </button>
-                      )}
+                      <button
+                        onClick={() => {
+                          const serviceSchemaKeys = schemas.map(s => `${s.service}:${s.entity}`);
+                          const allSelected = serviceSchemaKeys.every(k => selectedForDelete.has(k));
+                          const newSelected = new Set(selectedForDelete);
+                          if (allSelected) {
+                            serviceSchemaKeys.forEach(k => newSelected.delete(k));
+                          } else {
+                            serviceSchemaKeys.forEach(k => newSelected.add(k));
+                          }
+                          setSelectedForDelete(newSelected);
+                        }}
+                        className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                      >
+                        {schemas.every(s => selectedForDelete.has(`${s.service}:${s.entity}`)) ? 'Deselect all' : 'Select all'}
+                      </button>
                     </div>
                     <div className="grid grid-cols-2 gap-1 p-2">
                       {schemas.map((schema) => {
                         const key = `${schema.service}:${schema.entity}`;
-                        const isAlreadyAdded = sourceSchemas.some(s => s.service === schema.service && s.entity === schema.entity);
-                        const isSelected = pickerTarget === 'source'
-                          ? selectedForAdd.has(key)
-                          : targetSchema?.service === schema.service && targetSchema?.entity === schema.entity;
+                        const isSelected = selectedForDelete.has(key);
                         return (
                           <button
                             key={key}
-                            onClick={() => handlePickSchema(schema)}
+                            onClick={() => handleToggleSchemaSelection(schema.service, schema.entity)}
                             className={`p-3 text-left rounded-lg border transition-colors ${
                               isSelected
-                                ? 'bg-[hsl(var(--primary))]/10 border-[hsl(var(--primary))] text-[hsl(var(--primary))]'
-                                : isAlreadyAdded && pickerTarget === 'source'
-                                ? 'bg-green-500/10 border-green-500/30'
+                                ? 'bg-[hsl(var(--destructive))]/10 border-[hsl(var(--destructive))]'
                                 : 'hover:bg-[hsl(var(--muted))] border-transparent'
                             }`}
                           >
                             <div className="font-medium flex items-center gap-2">
-                              {pickerTarget === 'source' && (
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => {}}
-                                  className="rounded"
-                                />
-                              )}
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {}}
+                                className="rounded"
+                              />
                               <HighlightText text={schema.entity} search={pickerSearchTerm} />
                             </div>
                             <div className="text-xs text-[hsl(var(--muted-foreground))] ml-6">
                               {schema.fields.length} fields
-                              {isAlreadyAdded && pickerTarget === 'source' && (
-                                <span className="text-green-600 ml-1">(added)</span>
-                              )}
                             </div>
                           </button>
                         );
@@ -703,37 +724,20 @@ export function SchemaBuilder() {
             </CardContent>
             <div className="border-t p-4 flex justify-between">
               <div>
-                {pickerTarget === 'source' && selectedForAdd.size > 0 && (
+                {selectedForDelete.size > 0 && (
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => {
-                      // Remove selected that are already added as sources
-                      selectedForAdd.forEach(key => {
-                        const [service, entity] = key.split(':');
-                        if (sourceSchemas.some(s => s.service === service && s.entity === entity)) {
-                          removeSourceSchema(service, entity);
-                        }
-                      });
-                      setSelectedForAdd(new Set());
-                    }}
+                    onClick={handleDeleteSelectedSchemas}
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
-                    Remove Selected
+                    Delete {selectedForDelete.size} Schema{selectedForDelete.size !== 1 ? 's' : ''}
                   </Button>
                 )}
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setShowSchemaPicker(false)}>
-                  Cancel
-                </Button>
-                {pickerTarget === 'source' && selectedForAdd.size > 0 && (
-                  <Button onClick={handleAddSelectedSchemas}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add {selectedForAdd.size} Schema{selectedForAdd.size !== 1 ? 's' : ''}
-                  </Button>
-                )}
-              </div>
+              <Button variant="outline" onClick={() => setShowSchemaPicker(false)}>
+                Close
+              </Button>
             </div>
           </Card>
         </div>
