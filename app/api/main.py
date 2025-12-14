@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import migrations, schemas, mappings, preview, events, ai, mcp
+from .routes import migrations, schemas, mappings, preview, events, ai, mcp, leads
 
 app = FastAPI(
     title="Migrate Services API",
@@ -28,6 +28,7 @@ app.include_router(preview.router, prefix="/api/preview", tags=["preview"])
 app.include_router(events.router, prefix="/api/events", tags=["events"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(mcp.router, prefix="/api/mcp", tags=["mcp"])
+app.include_router(leads.router, prefix="/api/migration-requests", tags=["leads"])
 
 
 @app.get("/api/health")

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from './components/ThemeProvider';
+import { LandingPage } from './components/LandingPage';
 import { Dashboard } from './pages/Dashboard';
 import { MigrationWorkspace } from './pages/MigrationWorkspace';
 
@@ -20,7 +21,8 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/app" element={<Dashboard />} />
             <Route path="/workspace" element={<MigrationWorkspace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

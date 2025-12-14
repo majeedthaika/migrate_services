@@ -37,7 +37,7 @@ export function MigrationWorkspace() {
       {/* Header */}
       <header className="flex h-14 items-center justify-between border-b px-4">
         <div className="flex items-center gap-4">
-          <Link to="/" className="hover:opacity-80 transition-opacity">
+          <Link to="/app" className="hover:opacity-80 transition-opacity">
             <Logo size="sm" />
           </Link>
           {hasUnsavedChanges && (
@@ -49,7 +49,7 @@ export function MigrationWorkspace() {
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Link to="/">
+          <Link to="/app">
             <Button variant="outline" size="sm">Back to Dashboard</Button>
           </Link>
         </div>

@@ -407,7 +407,10 @@ export function Dashboard() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            <Link to="/" className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors">
+              Back to Home
+            </Link>
             <ThemeToggle />
             <Link to="/workspace">
               <Button>
