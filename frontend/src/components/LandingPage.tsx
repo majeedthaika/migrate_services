@@ -1,14 +1,63 @@
 import { useState } from 'react';
-import { ArrowRight, CheckCircle, Database, GitBranch, Upload, Zap, Shield, Clock, ChevronDown } from 'lucide-react';
+import { ArrowRight, CheckCircle, Database, GitBranch, Upload, Zap, Shield, Clock, ChevronDown, FileSpreadsheet, Globe } from 'lucide-react';
 import { Button, Card, CardContent, Input } from '@/components/ui';
 import { Logo } from './Logo';
 
+// Service logo URLs from Simple Icons CDN and brand colors
+const SERVICE_LOGOS: Record<string, { logo: string; color: string }> = {
+  'Stripe': { logo: 'https://cdn.simpleicons.org/stripe', color: '#635BFF' },
+  'Chargebee': { logo: 'https://cdn.simpleicons.org/chargebee', color: '#FF6600' },
+  'Recurly': { logo: 'https://cdn.simpleicons.org/recurly', color: '#F5447A' },
+  'Zuora': { logo: 'https://cdn.simpleicons.org/zuora', color: '#003399' },
+  'Paddle': { logo: 'https://cdn.simpleicons.org/paddle', color: '#FFCC00' },
+  'Salesforce': { logo: 'https://cdn.simpleicons.org/salesforce', color: '#00A1E0' },
+  'HubSpot': { logo: 'https://cdn.simpleicons.org/hubspot', color: '#FF7A59' },
+  'Pipedrive': { logo: 'https://cdn.simpleicons.org/pipedrive', color: '#1A1A1A' },
+  'Zoho': { logo: 'https://cdn.simpleicons.org/zoho', color: '#C8202B' },
+  'Braintree': { logo: 'https://cdn.simpleicons.org/braintree', color: '#000000' },
+  'Adyen': { logo: 'https://cdn.simpleicons.org/adyen', color: '#0ABF53' },
+  'Square': { logo: 'https://cdn.simpleicons.org/square', color: '#3E4348' },
+  'PayPal': { logo: 'https://cdn.simpleicons.org/paypal', color: '#003087' },
+  'Shopify': { logo: 'https://cdn.simpleicons.org/shopify', color: '#7AB55C' },
+  'WooCommerce': { logo: 'https://cdn.simpleicons.org/woocommerce', color: '#96588A' },
+  'BigCommerce': { logo: 'https://cdn.simpleicons.org/bigcommerce', color: '#121118' },
+  'Magento': { logo: 'https://cdn.simpleicons.org/magento', color: '#EE672F' },
+  'PostgreSQL': { logo: 'https://cdn.simpleicons.org/postgresql', color: '#4169E1' },
+  'MySQL': { logo: 'https://cdn.simpleicons.org/mysql', color: '#4479A1' },
+  'MongoDB': { logo: 'https://cdn.simpleicons.org/mongodb', color: '#47A248' },
+};
+
+// Component for service logo with fallback
+function ServiceLogo({ name }: { name: string }) {
+  const service = SERVICE_LOGOS[name];
+
+  if (!service) {
+    // Fallback icons for services without logos
+    if (name === 'CSV/Excel') {
+      return <FileSpreadsheet className="h-5 w-5 text-[hsl(var(--muted-foreground))]" />;
+    }
+    if (name === 'REST APIs') {
+      return <Globe className="h-5 w-5 text-[hsl(var(--muted-foreground))]" />;
+    }
+    return null;
+  }
+
+  return (
+    <img
+      src={service.logo}
+      alt={`${name} logo`}
+      className="h-5 w-5"
+      loading="lazy"
+    />
+  );
+}
+
 const SUPPORTED_SERVICES = [
-  { category: 'Billing & Subscriptions', services: ['Stripe', 'Chargebee', 'Recurly', 'Zuora', 'Paddle', 'FastSpring'] },
-  { category: 'CRM & Sales', services: ['Salesforce', 'HubSpot', 'Pipedrive', 'Zoho CRM', 'Close'] },
+  { category: 'Billing & Subscriptions', services: ['Stripe', 'Chargebee', 'Recurly', 'Zuora', 'Paddle'] },
+  { category: 'CRM & Sales', services: ['Salesforce', 'HubSpot', 'Pipedrive', 'Zoho'] },
   { category: 'Payment Processing', services: ['Stripe', 'Braintree', 'Adyen', 'Square', 'PayPal'] },
   { category: 'E-commerce', services: ['Shopify', 'WooCommerce', 'BigCommerce', 'Magento'] },
-  { category: 'Data Sources', services: ['CSV/Excel', 'PostgreSQL', 'MySQL', 'MongoDB', 'REST APIs'] },
+  { category: 'Databases', services: ['PostgreSQL', 'MySQL', 'MongoDB', 'CSV/Excel', 'REST APIs'] },
 ];
 
 const FEATURES = [
@@ -158,13 +207,14 @@ export function LandingPage() {
             {SUPPORTED_SERVICES.map((category) => (
               <Card key={category.category} className="bg-[hsl(var(--card))]">
                 <CardContent className="pt-6">
-                  <h3 className="font-semibold mb-3">{category.category}</h3>
+                  <h3 className="font-semibold mb-4">{category.category}</h3>
                   <div className="flex flex-wrap gap-2">
                     {category.services.map((service) => (
                       <span
                         key={service}
-                        className="px-3 py-1 text-sm rounded-full bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]"
+                        className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-[hsl(var(--muted))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]/80 transition-colors"
                       >
+                        <ServiceLogo name={service} />
                         {service}
                       </span>
                     ))}
