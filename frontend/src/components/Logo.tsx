@@ -18,22 +18,22 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
   // Offset added to center content within viewBox
   const circleConfigs = {
     sm: {
-      offset: 4,
-      leftCx: 40, rightCx: 53, cy: 19,
+      offset: 9,
+      leftCx: 45, rightCx: 58, cy: 19,
       outerR: 11, midR: 8, innerR: 5.5,
-      textX: 59, textY: 25
+      textX: 64, textY: 25
     },
     md: {
-      offset: 6,
-      leftCx: 56, rightCx: 74, cy: 27,
+      offset: 13,
+      leftCx: 63, rightCx: 81, cy: 27,
       outerR: 16, midR: 12, innerR: 8,
-      textX: 83, textY: 35
+      textX: 90, textY: 35
     },
     lg: {
-      offset: 10,
-      leftCx: 78, rightCx: 103, cy: 36,
+      offset: 27,
+      leftCx: 95, rightCx: 120, cy: 36,
       outerR: 22, midR: 16, innerR: 11,
-      textX: 115, textY: 48
+      textX: 132, textY: 48
     },
   };
 
