@@ -5,6 +5,13 @@
   "mappings": {
     "Customer": {
       "source": "Stripe.Customer",
+      "additional_sources": [
+        {
+          "source": "Stripe.Account",
+          "join_type": "left",
+          "join_on": "account_id"
+        }
+      ],
       "target": "Chargebee.Customer",
       "field_mappings": [
         {
@@ -129,9 +136,59 @@
           "target_field": "meta_data.shipping_address",
           "transform": "to_metadata",
           "notes": "Store shipping address in metadata"
+        },
+        {
+          "source": "Stripe.Account",
+          "source_field": "business_profile.name",
+          "target_field": "company",
+          "transform": "direct",
+          "notes": "Business name from Stripe Account"
+        },
+        {
+          "source": "Stripe.Account",
+          "source_field": "business_profile.url",
+          "target_field": "meta_data.website",
+          "transform": "to_metadata",
+          "notes": "Business website from Account"
+        },
+        {
+          "source": "Stripe.Account",
+          "source_field": "business_profile.support_email",
+          "target_field": "meta_data.support_email",
+          "transform": "to_metadata",
+          "notes": "Support email from Account"
+        },
+        {
+          "source": "Stripe.Account",
+          "source_field": "business_profile.support_phone",
+          "target_field": "meta_data.support_phone",
+          "transform": "to_metadata",
+          "notes": "Support phone from Account"
+        },
+        {
+          "source": "Stripe.Account",
+          "source_field": "settings.payments.statement_descriptor",
+          "target_field": "meta_data.statement_descriptor",
+          "transform": "to_metadata",
+          "notes": "Statement descriptor from Account settings"
+        },
+        {
+          "source": "Stripe.Account",
+          "source_field": "country",
+          "target_field": "meta_data.account_country",
+          "transform": "to_metadata",
+          "notes": "Account country"
+        },
+        {
+          "source": "Stripe.Account",
+          "source_field": "default_currency",
+          "target_field": "preferred_currency_code",
+          "transform": "uppercase",
+          "priority": "fallback",
+          "notes": "Use Account default currency as fallback if Customer currency not set"
         }
       ],
-      "notes": "Chargebee Customer is less granular than Stripe - some fields stored in metadata"
+      "notes": "Chargebee Customer is less granular than Stripe - some fields stored in metadata. Enriched with Stripe Account data."
     },
     "Product_to_Item": {
       "source": "Stripe.Product",

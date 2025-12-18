@@ -2,6 +2,57 @@
   "name": "Chargebee",
   "version": "v2",
   "description": "Chargebee subscription billing platform schema",
+  "relationships": [
+    {
+      "from": "Customer",
+      "to": "Subscription",
+      "type": "one_to_many",
+      "foreign_key": "customer_id",
+      "description": "A customer can have multiple subscriptions"
+    },
+    {
+      "from": "Customer",
+      "to": "PaymentSource",
+      "type": "one_to_many",
+      "foreign_key": "customer_id",
+      "description": "A customer can have multiple payment sources"
+    },
+    {
+      "from": "Customer",
+      "to": "Invoice",
+      "type": "one_to_many",
+      "foreign_key": "customer_id",
+      "description": "A customer can have multiple invoices"
+    },
+    {
+      "from": "ItemFamily",
+      "to": "Item",
+      "type": "one_to_many",
+      "foreign_key": "item_family_id",
+      "description": "An item family contains multiple items"
+    },
+    {
+      "from": "Item",
+      "to": "ItemPrice",
+      "type": "one_to_many",
+      "foreign_key": "item_id",
+      "description": "An item can have multiple item prices"
+    },
+    {
+      "from": "Subscription",
+      "to": "Invoice",
+      "type": "one_to_many",
+      "foreign_key": "subscription_id",
+      "description": "A subscription generates multiple invoices"
+    },
+    {
+      "from": "Subscription",
+      "to": "ItemPrice",
+      "type": "many_to_many",
+      "through": "subscription_items",
+      "description": "A subscription includes multiple item prices"
+    }
+  ],
   "entities": {
     "Customer": {
       "description": "Represents a customer in Chargebee",

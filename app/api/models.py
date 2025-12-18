@@ -208,6 +208,7 @@ class MappingResponse(BaseModel):
     target_entity: str
     field_mappings: List[FieldMappingCreate]
     created_at: datetime
+    additional_sources: Optional[List[dict]] = None
 
 
 class MappingListResponse(BaseModel):

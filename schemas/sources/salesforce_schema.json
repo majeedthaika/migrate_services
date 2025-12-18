@@ -2,6 +2,50 @@
   "name": "Salesforce",
   "version": "v59.0",
   "description": "Salesforce CRM standard objects schema",
+  "relationships": [
+    {
+      "from": "Account",
+      "to": "Contact",
+      "type": "one_to_many",
+      "foreign_key": "AccountId",
+      "description": "An account can have multiple contacts"
+    },
+    {
+      "from": "Account",
+      "to": "Opportunity",
+      "type": "one_to_many",
+      "foreign_key": "AccountId",
+      "description": "An account can have multiple opportunities"
+    },
+    {
+      "from": "Contact",
+      "to": "Opportunity",
+      "type": "many_to_many",
+      "through": "OpportunityContactRole",
+      "description": "Contacts can be associated with multiple opportunities"
+    },
+    {
+      "from": "Lead",
+      "to": "Account",
+      "type": "one_to_one",
+      "foreign_key": "ConvertedAccountId",
+      "description": "A converted lead creates an account"
+    },
+    {
+      "from": "Lead",
+      "to": "Contact",
+      "type": "one_to_one",
+      "foreign_key": "ConvertedContactId",
+      "description": "A converted lead creates a contact"
+    },
+    {
+      "from": "Lead",
+      "to": "Opportunity",
+      "type": "one_to_one",
+      "foreign_key": "ConvertedOpportunityId",
+      "description": "A converted lead can create an opportunity"
+    }
+  ],
   "entities": {
     "Account": {
       "description": "Represents an organization or person involved with your business",

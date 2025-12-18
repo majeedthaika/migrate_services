@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { DataSource, EntityMapping, EntitySchema, ProgressEvent, ChatMessage } from '@/types/migration';
+import type { DataSource, EntityMapping, EntitySchema, ProgressEvent, ChatMessage, SchemaRelationship } from '@/types/migration';
 
 type WorkspaceTab = 'migrate' | 'schemas' | 'mappings';
 
@@ -18,6 +18,9 @@ interface MigrationWorkspaceState {
   // All available schemas (reference data)
   availableSchemas: EntitySchema[];
   removeAvailableSchema: (service: string, entity: string) => void;
+
+  // Schema relationships by service
+  schemaRelationships: Record<string, SchemaRelationship[]>;
 
   // Schemas (schema-first approach)
   sourceSchemas: EntitySchema[];
@@ -2040,6 +2043,79 @@ const allAvailableSchemas: EntitySchema[] = [
   ...chargebeeSchemas,
 ];
 
+// Schema relationships by service - inferred from foreign keys and API documentation
+const schemaRelationshipsByService: Record<string, SchemaRelationship[]> = {
+  stripe: [
+    // Customer relationships
+    { from: 'Customer', to: 'Subscription', type: 'one_to_many', foreign_key: 'customer', description: 'A customer can have multiple subscriptions' },
+    { from: 'Customer', to: 'PaymentMethod', type: 'one_to_many', foreign_key: 'customer', description: 'A customer can have multiple payment methods' },
+    { from: 'Customer', to: 'Invoice', type: 'one_to_many', foreign_key: 'customer', description: 'A customer can have multiple invoices' },
+    { from: 'Customer', to: 'Charge', type: 'one_to_many', foreign_key: 'customer', description: 'A customer can have multiple charges' },
+    { from: 'Customer', to: 'PaymentIntent', type: 'one_to_many', foreign_key: 'customer', description: 'A customer can have multiple payment intents' },
+    // Product & Price relationships
+    { from: 'Product', to: 'Price', type: 'one_to_many', foreign_key: 'product', description: 'A product can have multiple prices' },
+    { from: 'Plan', to: 'Subscription', type: 'one_to_many', foreign_key: 'plan', description: 'A plan can be used by multiple subscriptions' },
+    // Subscription relationships
+    { from: 'Subscription', to: 'Invoice', type: 'one_to_many', foreign_key: 'subscription', description: 'A subscription generates multiple invoices' },
+    // Payment relationships
+    { from: 'PaymentIntent', to: 'Charge', type: 'one_to_many', foreign_key: 'payment_intent', description: 'A payment intent can have multiple charge attempts' },
+    { from: 'Charge', to: 'Refund', type: 'one_to_many', foreign_key: 'charge', description: 'A charge can have multiple refunds' },
+    { from: 'Charge', to: 'Dispute', type: 'one_to_one', foreign_key: 'charge', description: 'A charge can have a dispute' },
+    // Coupon relationships
+    { from: 'Coupon', to: 'PromotionCode', type: 'one_to_many', foreign_key: 'coupon', description: 'A coupon can have multiple promotion codes' },
+  ],
+  chargebee: [
+    // Customer relationships
+    { from: 'Customer', to: 'Subscription', type: 'one_to_many', foreign_key: 'customer_id', description: 'A customer can have multiple subscriptions' },
+    { from: 'Customer', to: 'Invoice', type: 'one_to_many', foreign_key: 'customer_id', description: 'A customer can have multiple invoices' },
+    { from: 'Customer', to: 'PaymentSource', type: 'one_to_many', foreign_key: 'customer_id', description: 'A customer can have multiple payment sources' },
+    { from: 'Customer', to: 'CreditNote', type: 'one_to_many', foreign_key: 'customer_id', description: 'A customer can have multiple credit notes' },
+    { from: 'Customer', to: 'Transaction', type: 'one_to_many', foreign_key: 'customer_id', description: 'A customer can have multiple transactions' },
+    { from: 'Customer', to: 'Order', type: 'one_to_many', foreign_key: 'customer_id', description: 'A customer can have multiple orders' },
+    { from: 'Customer', to: 'Quote', type: 'one_to_many', foreign_key: 'customer_id', description: 'A customer can have multiple quotes' },
+    // Item catalog relationships
+    { from: 'Item', to: 'ItemPrice', type: 'one_to_many', foreign_key: 'item_id', description: 'An item can have multiple prices' },
+    // Subscription relationships
+    { from: 'Subscription', to: 'Invoice', type: 'one_to_many', foreign_key: 'subscription_id', description: 'A subscription generates multiple invoices' },
+    { from: 'Subscription', to: 'ItemPrice', type: 'many_to_many', description: 'A subscription includes multiple item prices' },
+    // Invoice relationships
+    { from: 'Invoice', to: 'CreditNote', type: 'one_to_many', foreign_key: 'reference_invoice_id', description: 'An invoice can have multiple credit notes' },
+    { from: 'Invoice', to: 'Transaction', type: 'one_to_many', foreign_key: 'invoice_id', description: 'An invoice can have multiple transactions' },
+    // Coupon relationships
+    { from: 'Coupon', to: 'Subscription', type: 'many_to_many', description: 'Coupons can be applied to multiple subscriptions' },
+  ],
+  salesforce: [
+    // Account relationships
+    { from: 'Account', to: 'Contact', type: 'one_to_many', foreign_key: 'AccountId', description: 'An account can have multiple contacts' },
+    { from: 'Account', to: 'Opportunity', type: 'one_to_many', foreign_key: 'AccountId', description: 'An account can have multiple opportunities' },
+    { from: 'Account', to: 'Case', type: 'one_to_many', foreign_key: 'AccountId', description: 'An account can have multiple support cases' },
+    { from: 'Account', to: 'Contract', type: 'one_to_many', foreign_key: 'AccountId', description: 'An account can have multiple contracts' },
+    { from: 'Account', to: 'Order', type: 'one_to_many', foreign_key: 'AccountId', description: 'An account can have multiple orders' },
+    { from: 'Account', to: 'Asset', type: 'one_to_many', foreign_key: 'AccountId', description: 'An account can have multiple assets' },
+    // Contact relationships
+    { from: 'Contact', to: 'Case', type: 'one_to_many', foreign_key: 'ContactId', description: 'A contact can be associated with multiple cases' },
+    { from: 'Contact', to: 'Opportunity', type: 'many_to_many', foreign_key: 'OpportunityContactRole', description: 'Contacts can be associated with multiple opportunities' },
+    // Lead conversion
+    { from: 'Lead', to: 'Account', type: 'one_to_one', foreign_key: 'ConvertedAccountId', description: 'A converted lead creates an account' },
+    { from: 'Lead', to: 'Contact', type: 'one_to_one', foreign_key: 'ConvertedContactId', description: 'A converted lead creates a contact' },
+    { from: 'Lead', to: 'Opportunity', type: 'one_to_one', foreign_key: 'ConvertedOpportunityId', description: 'A converted lead can create an opportunity' },
+    // Opportunity relationships
+    { from: 'Opportunity', to: 'OpportunityLineItem', type: 'one_to_many', foreign_key: 'OpportunityId', description: 'An opportunity has multiple line items' },
+    { from: 'Opportunity', to: 'Quote', type: 'one_to_many', foreign_key: 'OpportunityId', description: 'An opportunity can have multiple quotes' },
+    // Campaign relationships
+    { from: 'Campaign', to: 'CampaignMember', type: 'one_to_many', foreign_key: 'CampaignId', description: 'A campaign has multiple members' },
+    { from: 'Campaign', to: 'Opportunity', type: 'one_to_many', foreign_key: 'CampaignId', description: 'A campaign can generate multiple opportunities' },
+    // Product relationships
+    { from: 'Product2', to: 'PricebookEntry', type: 'one_to_many', foreign_key: 'Product2Id', description: 'A product has multiple pricebook entries' },
+    { from: 'Product2', to: 'Asset', type: 'one_to_many', foreign_key: 'Product2Id', description: 'A product can have multiple assets' },
+    // Order relationships
+    { from: 'Order', to: 'OrderItem', type: 'one_to_many', foreign_key: 'OrderId', description: 'An order has multiple line items' },
+    { from: 'Contract', to: 'Order', type: 'one_to_many', foreign_key: 'ContractId', description: 'A contract can have multiple orders' },
+    // User/Owner relationships
+    { from: 'User', to: 'Task', type: 'one_to_many', foreign_key: 'OwnerId', description: 'A user can own multiple tasks' },
+  ],
+};
+
 const seedSources: DataSource[] = [
   {
     type: 'api',
@@ -2558,6 +2634,7 @@ const initialState = {
   name: 'Stripe + Salesforce to Chargebee Migration',
   description: 'Migrate customer and subscription data from Stripe and contact data from Salesforce into Chargebee',
   availableSchemas: allAvailableSchemas,
+  schemaRelationships: schemaRelationshipsByService,
   sourceSchemas: seedSourceSchemas,
   targetSchema: seedTargetSchema,
   sources: seedSources,

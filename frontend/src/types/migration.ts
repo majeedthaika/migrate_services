@@ -166,11 +166,25 @@ export interface FieldSchema {
   properties?: FieldSchema[]; // For nested objects
 }
 
+export interface SchemaRelationship {
+  from: string;
+  to: string;
+  type: 'one_to_one' | 'one_to_many' | 'many_to_one' | 'many_to_many';
+  foreign_key?: string;
+  description?: string;
+}
+
 export interface EntitySchema {
   service: string;
   entity: string;
   fields: FieldSchema[];
   description?: string;
+}
+
+export interface ServiceSchemaWithRelationships {
+  service: string;
+  entities: EntitySchema[];
+  relationships: SchemaRelationship[];
 }
 
 export interface ServiceSchema {

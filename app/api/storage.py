@@ -1,5 +1,7 @@
 """In-memory storage for migrations and mappings."""
 
+import json
+from pathlib import Path
 from typing import Dict, Optional
 from datetime import datetime
 import uuid
@@ -12,6 +14,9 @@ from .models import (
     MappingSaveRequest,
     MappingResponse,
 )
+
+# Path to mappings directory
+MAPPINGS_DIR = Path(__file__).parent.parent.parent / "mappings"
 
 
 class MigrationStorage:
@@ -90,6 +95,59 @@ class MappingStorage:
 
     def __init__(self):
         self._mappings: Dict[str, MappingResponse] = {}
+        self._load_from_files()
+
+    def _load_from_files(self):
+        """Load mappings from JSON files in the mappings directory."""
+        if not MAPPINGS_DIR.exists():
+            return
+
+        for json_file in MAPPINGS_DIR.glob("*.json"):
+            try:
+                with open(json_file, "r") as f:
+                    data = json.load(f)
+
+                # Extract entity mappings from the file
+                if "mappings" in data:
+                    for entity_name, entity_mapping in data["mappings"].items():
+                        mapping_id = f"{json_file.stem}_{entity_name}"
+
+                        # Parse source and target
+                        source_parts = entity_mapping.get("source", "").split(".")
+                        target_parts = entity_mapping.get("target", "").split(".")
+
+                        source_service = source_parts[0] if len(source_parts) > 0 else ""
+                        source_entity = source_parts[1] if len(source_parts) > 1 else entity_name
+                        target_service = target_parts[0] if len(target_parts) > 0 else ""
+                        target_entity = target_parts[1] if len(target_parts) > 1 else entity_name
+
+                        # Convert field mappings to the expected format
+                        field_mappings = []
+                        for fm in entity_mapping.get("field_mappings", []):
+                            field_mappings.append({
+                                "source_field": fm.get("source_field") or "",
+                                "target_field": fm.get("target_field") or "",
+                                "transform": fm.get("transform", "direct"),
+                                "transform_config": fm.get("transform_config", {}),
+                                "notes": fm.get("notes") or "",
+                                "source": fm.get("source") or "",  # For multi-source mappings
+                            })
+
+                        mapping = MappingResponse(
+                            id=mapping_id,
+                            name=f"{data.get('name', json_file.stem)} - {entity_name}",
+                            source_service=source_service,
+                            source_entity=source_entity,
+                            target_service=target_service,
+                            target_entity=target_entity,
+                            field_mappings=field_mappings,
+                            created_at=datetime.utcnow(),
+                            additional_sources=entity_mapping.get("additional_sources", []),
+                        )
+
+                        self._mappings[mapping_id] = mapping
+            except Exception as e:
+                print(f"Error loading mapping file {json_file}: {e}")
 
     def create(self, data: MappingSaveRequest) -> MappingResponse:
         mapping_id = str(uuid.uuid4())

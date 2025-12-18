@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { Plus, Trash2, Edit2, Check, X, ChevronDown, ChevronRight, Upload, Sparkles, Database, Search, Save, Loader2, RotateCcw } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Select } from '@/components/ui';
 import { DataInputModal } from '@/components/DataInputModal';
+import { SchemaRelationshipDiagram } from '@/components/SchemaRelationshipDiagram';
 import { useMigrationStore } from '@/store/migration';
 import { schemaAPI } from '@/lib/api';
 import type { EntitySchema, FieldSchema } from '@/types/migration';
@@ -530,6 +531,9 @@ export function SchemaBuilder() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Entity Relationship Diagram */}
+      <SchemaRelationshipDiagram />
 
       {/* Source Schemas */}
       <div>

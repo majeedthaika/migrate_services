@@ -2,6 +2,50 @@
   "name": "Stripe",
   "version": "2024-01",
   "description": "Stripe billing and payment platform schema",
+  "relationships": [
+    {
+      "from": "Customer",
+      "to": "Subscription",
+      "type": "one_to_many",
+      "foreign_key": "customer",
+      "description": "A customer can have multiple subscriptions"
+    },
+    {
+      "from": "Customer",
+      "to": "PaymentMethod",
+      "type": "one_to_many",
+      "foreign_key": "customer",
+      "description": "A customer can have multiple payment methods"
+    },
+    {
+      "from": "Customer",
+      "to": "Invoice",
+      "type": "one_to_many",
+      "foreign_key": "customer",
+      "description": "A customer can have multiple invoices"
+    },
+    {
+      "from": "Product",
+      "to": "Price",
+      "type": "one_to_many",
+      "foreign_key": "product",
+      "description": "A product can have multiple prices"
+    },
+    {
+      "from": "Subscription",
+      "to": "Invoice",
+      "type": "one_to_many",
+      "foreign_key": "subscription",
+      "description": "A subscription generates multiple invoices"
+    },
+    {
+      "from": "Subscription",
+      "to": "Price",
+      "type": "many_to_many",
+      "through": "subscription_items",
+      "description": "A subscription can include multiple prices via subscription items"
+    }
+  ],
   "entities": {
     "Customer": {
       "description": "Represents a customer of your business",
