@@ -1,7 +1,7 @@
 {
   "name": "Stripe + Salesforce to Chargebee Migration",
-  "version": "1.0",
-  "description": "Complete migration mapping from Stripe billing and Salesforce CRM to Chargebee",
+  "version": "2.0",
+  "description": "Complete migration mapping from Stripe billing and Salesforce CRM to Chargebee with comprehensive JOIN configurations",
   "sources": ["Stripe", "Salesforce"],
   "target": "Chargebee",
   "migration_order": [
@@ -13,23 +13,142 @@
     "Subscription",
     "Invoice"
   ],
+  "cross_schema_relationships": {
+    "description": "Documents how entities relate across source providers for JOIN operations",
+    "stripe_to_salesforce": [
+      {
+        "relationship": "Stripe.Customer to Salesforce.Contact",
+        "join_fields": {
+          "stripe": "email",
+          "salesforce": "Email"
+        },
+        "type": "one_to_one",
+        "confidence": "high",
+        "notes": "Primary link between billing (Stripe) and CRM (Salesforce) data"
+      },
+      {
+        "relationship": "Stripe.Customer to Salesforce.Account",
+        "join_fields": {
+          "stripe": "name",
+          "salesforce": "Name"
+        },
+        "type": "one_to_one",
+        "confidence": "medium",
+        "notes": "Fallback: Match by company/account name if Contact not found"
+      },
+      {
+        "relationship": "Stripe.Subscription to Salesforce.Opportunity",
+        "join_path": "Stripe.Subscription -> Stripe.Customer (via customer) -> Salesforce.Contact (via Email) -> Salesforce.Opportunity (via AccountId)",
+        "type": "many_to_many",
+        "notes": "Links subscriptions to sales opportunities for revenue tracking"
+      }
+    ],
+    "internal_stripe": [
+      {
+        "relationship": "Stripe.Price to Stripe.Product",
+        "join_fields": {
+          "price": "product",
+          "product": "id"
+        },
+        "type": "many_to_one"
+      },
+      {
+        "relationship": "Stripe.Subscription to Stripe.Customer",
+        "join_fields": {
+          "subscription": "customer",
+          "customer": "id"
+        },
+        "type": "many_to_one"
+      },
+      {
+        "relationship": "Stripe.Invoice to Stripe.Customer",
+        "join_fields": {
+          "invoice": "customer",
+          "customer": "id"
+        },
+        "type": "many_to_one"
+      },
+      {
+        "relationship": "Stripe.Invoice to Stripe.Subscription",
+        "join_fields": {
+          "invoice": "subscription",
+          "subscription": "id"
+        },
+        "type": "many_to_one"
+      },
+      {
+        "relationship": "Stripe.PaymentMethod to Stripe.Customer",
+        "join_fields": {
+          "payment_method": "customer",
+          "customer": "id"
+        },
+        "type": "many_to_one"
+      }
+    ],
+    "internal_salesforce": [
+      {
+        "relationship": "Salesforce.Contact to Salesforce.Account",
+        "join_fields": {
+          "contact": "AccountId",
+          "account": "Id"
+        },
+        "type": "many_to_one"
+      },
+      {
+        "relationship": "Salesforce.Opportunity to Salesforce.Account",
+        "join_fields": {
+          "opportunity": "AccountId",
+          "account": "Id"
+        },
+        "type": "many_to_one"
+      }
+    ]
+  },
   "mappings": {
     "Customer": {
       "source": "Stripe.Customer",
       "target": "Chargebee.Customer",
       "description": "Map Stripe customers enriched with Salesforce contact/account data to Chargebee customers",
+      "cardinality": "many:1",
+      "join_config": {
+        "type": "left",
+        "primary_source": {
+          "service": "Stripe",
+          "entity": "Customer"
+        },
+        "join_conditions": [
+          {
+            "left_source": { "service": "Stripe", "entity": "Customer" },
+            "right_source": { "service": "Salesforce", "entity": "Contact" },
+            "left_field": "email",
+            "right_field": "Email",
+            "operator": "equals",
+            "description": "Match Stripe customer to Salesforce contact by email address"
+          },
+          {
+            "left_source": { "service": "Salesforce", "entity": "Contact" },
+            "right_source": { "service": "Salesforce", "entity": "Account" },
+            "left_field": "AccountId",
+            "right_field": "Id",
+            "operator": "equals",
+            "description": "Join Salesforce contact to their parent account"
+          }
+        ]
+      },
       "additional_sources": [
         {
           "source": "Salesforce.Contact",
           "join_type": "left",
           "join_on": "email",
-          "match_fields": ["Stripe.Customer.email", "Salesforce.Contact.Email"]
+          "match_fields": ["Stripe.Customer.email", "Salesforce.Contact.Email"],
+          "description": "Enrich with CRM contact data (name, title, department)"
         },
         {
           "source": "Salesforce.Account",
           "join_type": "left",
           "join_on": "contact_account",
-          "match_fields": ["Salesforce.Contact.AccountId", "Salesforce.Account.Id"]
+          "match_fields": ["Salesforce.Contact.AccountId", "Salesforce.Account.Id"],
+          "description": "Enrich with company data (industry, revenue, employees)"
         }
       ],
       "field_mappings": [
@@ -45,20 +164,24 @@
           "source_field": "FirstName",
           "target_field": "first_name",
           "transform": "direct",
-          "notes": "Use Salesforce first name for better CRM data quality"
+          "priority": 1,
+          "notes": "Primary: Use Salesforce first name for better CRM data quality"
         },
         {
           "source": "Salesforce.Contact",
           "source_field": "LastName",
           "target_field": "last_name",
           "transform": "direct",
-          "notes": "Use Salesforce last name for better CRM data quality"
+          "priority": 1,
+          "notes": "Primary: Use Salesforce last name for better CRM data quality"
         },
         {
           "source_field": "name",
           "target_field": "first_name",
           "transform": "split_name_first",
           "transform_config": { "delimiter": " ", "index": 0 },
+          "priority": 2,
+          "fallback_for": "Salesforce.Contact.FirstName",
           "notes": "Fallback: Extract first name from Stripe full name if Salesforce unavailable"
         },
         {
@@ -66,33 +189,45 @@
           "target_field": "last_name",
           "transform": "split_name_last",
           "transform_config": { "delimiter": " ", "index": -1 },
+          "priority": 2,
+          "fallback_for": "Salesforce.Contact.LastName",
           "notes": "Fallback: Extract last name from Stripe full name if Salesforce unavailable"
         },
         {
           "source_field": "email",
           "target_field": "email",
           "transform": "direct",
-          "notes": "Direct email mapping"
+          "notes": "Direct email mapping - this is the JOIN key with Salesforce"
+        },
+        {
+          "source": "Salesforce.Contact",
+          "source_field": "Phone",
+          "target_field": "phone",
+          "transform": "direct",
+          "priority": 1,
+          "notes": "Primary: Use Salesforce phone (often more up-to-date)"
         },
         {
           "source_field": "phone",
           "target_field": "phone",
           "transform": "direct",
-          "notes": "Direct phone mapping"
+          "priority": 2,
+          "fallback_for": "Salesforce.Contact.Phone",
+          "notes": "Fallback: Use Stripe phone if Salesforce not available"
         },
         {
           "source": "Salesforce.Account",
           "source_field": "Name",
           "target_field": "company",
           "transform": "direct",
-          "notes": "Company name from Salesforce Account"
+          "notes": "Company name from Salesforce Account (joined via Contact.AccountId)"
         },
         {
           "source": "Salesforce.Account",
           "source_field": "Industry",
           "target_field": "meta_data.industry",
           "transform": "direct",
-          "notes": "Store industry in metadata"
+          "notes": "Store industry in metadata for segmentation"
         },
         {
           "source": "Salesforce.Account",
@@ -109,9 +244,34 @@
           "notes": "Store employee count in metadata"
         },
         {
+          "source": "Salesforce.Account",
+          "source_field": "Website",
+          "target_field": "meta_data.website",
+          "transform": "direct",
+          "notes": "Store company website from Salesforce"
+        },
+        {
+          "source": "Salesforce.Account",
+          "source_field": "Type",
+          "target_field": "meta_data.account_type",
+          "transform": "direct",
+          "notes": "Store Salesforce account type (Prospect, Customer, Partner, etc.)"
+        },
+        {
           "source_field": "address.line1",
           "target_field": "billing_address.line1",
-          "transform": "direct"
+          "transform": "direct",
+          "priority": 1,
+          "notes": "Stripe billing address line 1"
+        },
+        {
+          "source": "Salesforce.Account",
+          "source_field": "BillingStreet",
+          "target_field": "billing_address.line1",
+          "transform": "direct",
+          "priority": 2,
+          "fallback_for": "Stripe.Customer.address.line1",
+          "notes": "Fallback: Use Salesforce billing street if Stripe address empty"
         },
         {
           "source_field": "address.line2",
@@ -121,17 +281,44 @@
         {
           "source_field": "address.city",
           "target_field": "billing_address.city",
-          "transform": "direct"
+          "transform": "direct",
+          "priority": 1
+        },
+        {
+          "source": "Salesforce.Account",
+          "source_field": "BillingCity",
+          "target_field": "billing_address.city",
+          "transform": "direct",
+          "priority": 2,
+          "fallback_for": "Stripe.Customer.address.city"
         },
         {
           "source_field": "address.state",
           "target_field": "billing_address.state",
-          "transform": "direct"
+          "transform": "direct",
+          "priority": 1
+        },
+        {
+          "source": "Salesforce.Account",
+          "source_field": "BillingState",
+          "target_field": "billing_address.state",
+          "transform": "direct",
+          "priority": 2,
+          "fallback_for": "Stripe.Customer.address.state"
         },
         {
           "source_field": "address.postal_code",
           "target_field": "billing_address.zip",
-          "transform": "direct"
+          "transform": "direct",
+          "priority": 1
+        },
+        {
+          "source": "Salesforce.Account",
+          "source_field": "BillingPostalCode",
+          "target_field": "billing_address.zip",
+          "transform": "direct",
+          "priority": 2,
+          "fallback_for": "Stripe.Customer.address.postal_code"
         },
         {
           "source_field": "address.country",
@@ -216,6 +403,20 @@
           "target_field": "meta_data.lead_source",
           "transform": "direct",
           "notes": "Store lead source for attribution"
+        },
+        {
+          "source": "Salesforce.Contact",
+          "source_field": "HasOptedOutOfEmail",
+          "target_field": "meta_data.email_opt_out",
+          "transform": "direct",
+          "notes": "Preserve email opt-out preference from Salesforce"
+        },
+        {
+          "source": "Salesforce.Contact",
+          "source_field": "DoNotCall",
+          "target_field": "meta_data.do_not_call",
+          "transform": "direct",
+          "notes": "Preserve do-not-call preference from Salesforce"
         }
       ]
     },
@@ -223,6 +424,7 @@
       "source": "Stripe.Product",
       "target": "Chargebee.Item",
       "description": "Map Stripe products to Chargebee items (Product Catalog 2.0)",
+      "cardinality": "1:1",
       "field_mappings": [
         {
           "source_field": "id",
@@ -304,19 +506,44 @@
           "target_field": "meta_data.tax_code",
           "transform": "direct",
           "notes": "Store Stripe tax code for reference"
+        },
+        {
+          "source_field": "default_price",
+          "target_field": "meta_data.stripe_default_price_id",
+          "transform": "direct",
+          "notes": "Store default price ID for reference"
         }
       ]
     },
     "ItemPrice": {
       "source": "Stripe.Price",
       "target": "Chargebee.ItemPrice",
-      "description": "Map Stripe prices to Chargebee item prices",
+      "description": "Map Stripe prices to Chargebee item prices with product enrichment",
+      "cardinality": "many:1",
+      "join_config": {
+        "type": "inner",
+        "primary_source": {
+          "service": "Stripe",
+          "entity": "Price"
+        },
+        "join_conditions": [
+          {
+            "left_source": { "service": "Stripe", "entity": "Price" },
+            "right_source": { "service": "Stripe", "entity": "Product" },
+            "left_field": "product",
+            "right_field": "id",
+            "operator": "equals",
+            "description": "Join Price to its parent Product to get product name and metadata"
+          }
+        ]
+      },
       "additional_sources": [
         {
           "source": "Stripe.Product",
           "join_type": "inner",
           "join_on": "product_id",
-          "match_fields": ["Stripe.Price.product", "Stripe.Product.id"]
+          "match_fields": ["Stripe.Price.product", "Stripe.Product.id"],
+          "description": "Get product details for price naming and categorization"
         }
       ],
       "field_mappings": [
@@ -335,6 +562,22 @@
             "max_length": 50
           },
           "notes": "Use nickname if available, otherwise product name"
+        },
+        {
+          "source": "Stripe.Product",
+          "source_field": "name",
+          "target_field": "external_name",
+          "transform": "truncate",
+          "transform_config": { "max_length": 100 },
+          "notes": "Use product name as external name"
+        },
+        {
+          "source": "Stripe.Product",
+          "source_field": "description",
+          "target_field": "description",
+          "transform": "truncate",
+          "transform_config": { "max_length": 500 },
+          "notes": "Use product description"
         },
         {
           "source_field": "product",
@@ -396,8 +639,13 @@
         {
           "source_field": null,
           "target_field": "trial_period_unit",
-          "transform": "static",
-          "transform_config": { "value": "day" },
+          "transform": "conditional",
+          "transform_config": {
+            "condition": "field_exists",
+            "field": "recurring.trial_period_days",
+            "then": "day",
+            "else": null
+          },
           "notes": "Stripe trial is always in days"
         },
         {
@@ -444,19 +692,94 @@
         {
           "source_field": "metadata",
           "target_field": "meta_data",
-          "transform": "direct"
+          "transform": "merge_objects"
         },
         {
           "source_field": "id",
           "target_field": "meta_data.stripe_price_id",
           "transform": "direct"
+        },
+        {
+          "source": "Stripe.Product",
+          "source_field": "id",
+          "target_field": "meta_data.stripe_product_id",
+          "transform": "direct"
+        },
+        {
+          "source": "Stripe.Product",
+          "source_field": "tax_code",
+          "target_field": "meta_data.tax_code",
+          "transform": "direct",
+          "notes": "Inherit tax code from product"
         }
       ]
     },
     "Subscription": {
       "source": "Stripe.Subscription",
       "target": "Chargebee.Subscription",
-      "description": "Map Stripe subscriptions to Chargebee subscriptions",
+      "description": "Map Stripe subscriptions to Chargebee subscriptions with customer and CRM enrichment",
+      "cardinality": "many:1",
+      "join_config": {
+        "type": "left",
+        "primary_source": {
+          "service": "Stripe",
+          "entity": "Subscription"
+        },
+        "join_conditions": [
+          {
+            "left_source": { "service": "Stripe", "entity": "Subscription" },
+            "right_source": { "service": "Stripe", "entity": "Customer" },
+            "left_field": "customer",
+            "right_field": "id",
+            "operator": "equals",
+            "description": "Join subscription to customer for enrichment"
+          },
+          {
+            "left_source": { "service": "Stripe", "entity": "Customer" },
+            "right_source": { "service": "Salesforce", "entity": "Contact" },
+            "left_field": "email",
+            "right_field": "Email",
+            "operator": "equals",
+            "description": "Link to Salesforce contact via customer email"
+          },
+          {
+            "left_source": { "service": "Salesforce", "entity": "Contact" },
+            "right_source": { "service": "Salesforce", "entity": "Opportunity" },
+            "left_field": "AccountId",
+            "right_field": "AccountId",
+            "operator": "equals",
+            "description": "Link to Salesforce opportunity via account"
+          }
+        ]
+      },
+      "additional_sources": [
+        {
+          "source": "Stripe.Customer",
+          "join_type": "inner",
+          "join_on": "customer_id",
+          "match_fields": ["Stripe.Subscription.customer", "Stripe.Customer.id"],
+          "description": "Get customer email for Salesforce linkage"
+        },
+        {
+          "source": "Salesforce.Contact",
+          "join_type": "left",
+          "join_on": "customer_email",
+          "match_fields": ["Stripe.Customer.email", "Salesforce.Contact.Email"],
+          "description": "Link to CRM contact"
+        },
+        {
+          "source": "Salesforce.Opportunity",
+          "join_type": "left",
+          "join_on": "account_opportunity",
+          "match_fields": ["Salesforce.Contact.AccountId", "Salesforce.Opportunity.AccountId"],
+          "filter": {
+            "field": "IsWon",
+            "operator": "equals",
+            "value": true
+          },
+          "description": "Get closed-won opportunity data for sales attribution"
+        }
+      ],
       "field_mappings": [
         {
           "source_field": "id",
@@ -578,7 +901,7 @@
         {
           "source_field": "metadata",
           "target_field": "meta_data",
-          "transform": "direct"
+          "transform": "merge_objects"
         },
         {
           "source_field": "id",
@@ -597,6 +920,55 @@
           "transform": "direct"
         },
         {
+          "source": "Stripe.Customer",
+          "source_field": "email",
+          "target_field": "meta_data.customer_email",
+          "transform": "direct",
+          "notes": "Store customer email from joined Customer entity"
+        },
+        {
+          "source": "Salesforce.Opportunity",
+          "source_field": "Id",
+          "target_field": "meta_data.salesforce_opportunity_id",
+          "transform": "direct",
+          "notes": "Store related Salesforce opportunity ID"
+        },
+        {
+          "source": "Salesforce.Opportunity",
+          "source_field": "Name",
+          "target_field": "meta_data.opportunity_name",
+          "transform": "direct",
+          "notes": "Store opportunity name for reference"
+        },
+        {
+          "source": "Salesforce.Opportunity",
+          "source_field": "Amount",
+          "target_field": "meta_data.opportunity_amount",
+          "transform": "direct",
+          "notes": "Store original opportunity amount"
+        },
+        {
+          "source": "Salesforce.Opportunity",
+          "source_field": "CloseDate",
+          "target_field": "meta_data.opportunity_close_date",
+          "transform": "direct",
+          "notes": "Store opportunity close date"
+        },
+        {
+          "source": "Salesforce.Opportunity",
+          "source_field": "LeadSource",
+          "target_field": "meta_data.lead_source",
+          "transform": "direct",
+          "notes": "Store lead source for attribution"
+        },
+        {
+          "source": "Salesforce.Contact",
+          "source_field": "OwnerId",
+          "target_field": "meta_data.salesforce_owner_id",
+          "transform": "direct",
+          "notes": "Store sales rep owner ID"
+        },
+        {
           "source_field": "cancel_at_period_end",
           "target_field": "status",
           "transform": "conditional",
@@ -613,7 +985,49 @@
     "Invoice": {
       "source": "Stripe.Invoice",
       "target": "Chargebee.Invoice",
-      "description": "Map Stripe invoices to Chargebee invoices",
+      "description": "Map Stripe invoices to Chargebee invoices with customer and subscription context",
+      "cardinality": "many:1",
+      "join_config": {
+        "type": "left",
+        "primary_source": {
+          "service": "Stripe",
+          "entity": "Invoice"
+        },
+        "join_conditions": [
+          {
+            "left_source": { "service": "Stripe", "entity": "Invoice" },
+            "right_source": { "service": "Stripe", "entity": "Customer" },
+            "left_field": "customer",
+            "right_field": "id",
+            "operator": "equals",
+            "description": "Join invoice to customer"
+          },
+          {
+            "left_source": { "service": "Stripe", "entity": "Invoice" },
+            "right_source": { "service": "Stripe", "entity": "Subscription" },
+            "left_field": "subscription",
+            "right_field": "id",
+            "operator": "equals",
+            "description": "Join invoice to subscription"
+          }
+        ]
+      },
+      "additional_sources": [
+        {
+          "source": "Stripe.Customer",
+          "join_type": "left",
+          "join_on": "customer_id",
+          "match_fields": ["Stripe.Invoice.customer", "Stripe.Customer.id"],
+          "description": "Get customer details for invoice context"
+        },
+        {
+          "source": "Stripe.Subscription",
+          "join_type": "left",
+          "join_on": "subscription_id",
+          "match_fields": ["Stripe.Invoice.subscription", "Stripe.Subscription.id"],
+          "description": "Get subscription details for invoice context"
+        }
+      ],
       "field_mappings": [
         {
           "source_field": "id",
@@ -742,13 +1156,61 @@
           "source_field": "invoice_pdf",
           "target_field": "meta_data.stripe_invoice_pdf",
           "transform": "direct"
+        },
+        {
+          "source": "Stripe.Customer",
+          "source_field": "email",
+          "target_field": "meta_data.customer_email",
+          "transform": "direct",
+          "notes": "Store customer email from joined entity"
+        },
+        {
+          "source": "Stripe.Customer",
+          "source_field": "name",
+          "target_field": "meta_data.customer_name",
+          "transform": "direct",
+          "notes": "Store customer name from joined entity"
+        },
+        {
+          "source": "Stripe.Subscription",
+          "source_field": "status",
+          "target_field": "meta_data.subscription_status",
+          "transform": "direct",
+          "notes": "Store subscription status at time of invoice"
         }
       ]
     },
     "PaymentSource": {
       "source": "Stripe.PaymentMethod",
       "target": "Chargebee.PaymentSource",
-      "description": "Map Stripe payment methods to Chargebee payment sources",
+      "description": "Map Stripe payment methods to Chargebee payment sources with customer context",
+      "cardinality": "many:1",
+      "join_config": {
+        "type": "left",
+        "primary_source": {
+          "service": "Stripe",
+          "entity": "PaymentMethod"
+        },
+        "join_conditions": [
+          {
+            "left_source": { "service": "Stripe", "entity": "PaymentMethod" },
+            "right_source": { "service": "Stripe", "entity": "Customer" },
+            "left_field": "customer",
+            "right_field": "id",
+            "operator": "equals",
+            "description": "Join payment method to customer for context"
+          }
+        ]
+      },
+      "additional_sources": [
+        {
+          "source": "Stripe.Customer",
+          "join_type": "left",
+          "join_on": "customer_id",
+          "match_fields": ["Stripe.PaymentMethod.customer", "Stripe.Customer.id"],
+          "description": "Get customer details to determine primary payment method"
+        }
+      ],
       "field_mappings": [
         {
           "source_field": "id",
@@ -846,6 +1308,23 @@
           "source_field": "created",
           "target_field": "created_at",
           "transform": "direct"
+        },
+        {
+          "source": "Stripe.Customer",
+          "source_field": "default_source",
+          "target_field": "meta_data.is_default",
+          "transform": "computed",
+          "transform_config": {
+            "expression": "Stripe.PaymentMethod.id == Stripe.Customer.default_source"
+          },
+          "notes": "Determine if this is the customer's default payment method"
+        },
+        {
+          "source": "Stripe.Customer",
+          "source_field": "email",
+          "target_field": "meta_data.customer_email",
+          "transform": "direct",
+          "notes": "Store customer email from joined entity"
         }
       ]
     },
@@ -915,6 +1394,10 @@
     },
     "iso_country_code": {
       "description": "Convert country name to ISO 3166-1 alpha-2 code"
+    },
+    "computed": {
+      "description": "Compute value based on expression",
+      "parameters": ["expression"]
     }
   },
   "validation_rules": [
@@ -925,6 +1408,12 @@
       "message": "Customer must have either email or company name"
     },
     {
+      "entity": "Customer",
+      "field": "meta_data.salesforce_contact_id",
+      "rule": "warn_if_null",
+      "message": "Customer not matched to Salesforce contact - CRM enrichment unavailable"
+    },
+    {
       "entity": "Subscription",
       "field": "customer_id",
       "rule": "exists_in_target",
@@ -932,13 +1421,60 @@
       "message": "Customer must be migrated before subscription"
     },
     {
+      "entity": "Subscription",
+      "field": "subscription_items",
+      "rule": "not_empty",
+      "message": "Subscription must have at least one item"
+    },
+    {
       "entity": "ItemPrice",
       "field": "item_id",
       "rule": "exists_in_target",
       "target_entity": "Item",
       "message": "Item must be migrated before item price"
+    },
+    {
+      "entity": "Invoice",
+      "field": "customer_id",
+      "rule": "exists_in_target",
+      "target_entity": "Customer",
+      "message": "Customer must be migrated before invoice"
+    },
+    {
+      "entity": "PaymentSource",
+      "field": "customer_id",
+      "rule": "exists_in_target",
+      "target_entity": "Customer",
+      "message": "Customer must be migrated before payment source"
     }
   ],
+  "join_strategies": {
+    "description": "Strategies for handling JOIN operations during migration",
+    "strategies": [
+      {
+        "name": "email_match",
+        "description": "Match records by email address",
+        "fields": ["email", "Email"],
+        "normalization": "lowercase_trim",
+        "fallback": "skip"
+      },
+      {
+        "name": "id_reference",
+        "description": "Match records by foreign key ID reference",
+        "fields": ["*_id", "*Id"],
+        "normalization": "none",
+        "fallback": "error"
+      },
+      {
+        "name": "name_fuzzy",
+        "description": "Fuzzy match by company/account name",
+        "fields": ["name", "Name", "company", "Company"],
+        "normalization": "lowercase_trim_remove_punctuation",
+        "similarity_threshold": 0.85,
+        "fallback": "skip"
+      }
+    ]
+  },
   "post_migration_notes": [
     "Verify all customer balances are correctly migrated",
     "Test subscription billing cycles match original dates",
@@ -946,6 +1482,9 @@
     "Review any customers with multiple Salesforce contacts and consolidate if needed",
     "Update webhook endpoints to point to Chargebee",
     "Test invoice generation and email delivery",
-    "Verify tax calculations are consistent"
+    "Verify tax calculations are consistent",
+    "Validate Salesforce-enriched metadata is properly stored",
+    "Check that cross-provider JOINs matched expected number of records",
+    "Review subscription-to-opportunity linkages for sales attribution accuracy"
   ]
 }
