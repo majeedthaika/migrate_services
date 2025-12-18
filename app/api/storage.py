@@ -112,9 +112,11 @@ class MappingStorage:
                     for entity_name, entity_mapping in data["mappings"].items():
                         mapping_id = f"{json_file.stem}_{entity_name}"
 
-                        # Parse source and target
-                        source_parts = entity_mapping.get("source", "").split(".")
-                        target_parts = entity_mapping.get("target", "").split(".")
+                        # Parse source and target (handle null/None values)
+                        source_str = entity_mapping.get("source") or ""
+                        target_str = entity_mapping.get("target") or ""
+                        source_parts = source_str.split(".") if source_str else [""]
+                        target_parts = target_str.split(".") if target_str else [""]
 
                         source_service = source_parts[0] if len(source_parts) > 0 else ""
                         source_entity = source_parts[1] if len(source_parts) > 1 else entity_name

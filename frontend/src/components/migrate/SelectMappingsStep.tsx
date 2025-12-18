@@ -1,7 +1,12 @@
-import { useState } from 'react';
-import { ArrowRight, CheckSquare, Square, AlertCircle, Search, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { ArrowRight, CheckSquare, Square, AlertCircle, Search, X, ChevronDown, ChevronUp, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Input } from '@/components/ui';
 import { useMigrationStore } from '@/store/migration';
+import {
+  computeUploadOrder,
+  getOverridablePrerequisites,
+  getEntityDependencies,
+} from '@/lib/uploadOrder';
 
 export function SelectMappingsStep() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -12,33 +17,19 @@ export function SelectMappingsStep() {
     selectedMappingKeys,
     setSelectedMappingKeys,
     toggleMappingSelection,
-    selectedSourceSchemaKeys,
+    schemaRelationships,
+    targetService,
+    overriddenPrerequisites,
+    togglePrerequisiteOverride,
   } = useMigrationStore();
 
-  // Filter mappings to only show those where ALL source schemas are selected
-  // This includes the primary source and any additional sources for multi-source joins
-  const availableMappings = entityMappings.filter((mapping) => {
-    // Check primary source
-    const primarySourceKey = `${mapping.source_service}.${mapping.source_entity}`;
-    if (!selectedSourceSchemaKeys.includes(primarySourceKey)) {
-      return false;
-    }
+  // Get target relationships for dependency calculation
+  const targetRelationships = schemaRelationships[targetService] || [];
 
-    // Check additional sources (for multi-source joins)
-    if (mapping.additional_sources && mapping.additional_sources.length > 0) {
-      const allAdditionalSourcesSelected = mapping.additional_sources.every((src) => {
-        const additionalKey = `${src.service}.${src.entity}`;
-        return selectedSourceSchemaKeys.includes(additionalKey);
-      });
-      if (!allAdditionalSourcesSelected) {
-        return false;
-      }
-    }
+  // All mappings are available (no schema filtering)
+  const availableMappings = entityMappings;
 
-    return true;
-  });
-
-  // Further filter by search query
+  // Filter by search query
   const filteredMappings = availableMappings.filter((mapping) => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
@@ -55,25 +46,9 @@ export function SelectMappingsStep() {
     );
   });
 
-  // Helper function to check if all sources for a mapping are selected
-  const areAllSourcesSelected = (mapping: typeof entityMappings[0]) => {
-    const primarySourceKey = `${mapping.source_service}.${mapping.source_entity}`;
-    if (!selectedSourceSchemaKeys.includes(primarySourceKey)) {
-      return false;
-    }
-    if (mapping.additional_sources && mapping.additional_sources.length > 0) {
-      return mapping.additional_sources.every((src) => {
-        const additionalKey = `${src.service}.${src.entity}`;
-        return selectedSourceSchemaKeys.includes(additionalKey);
-      });
-    }
-    return true;
-  };
-
   // Get indices of filtered mappings in the original array
   const filteredMappingIndices = entityMappings
     .map((mapping, index) => {
-      if (!areAllSourcesSelected(mapping)) return -1;
       if (!searchQuery) return index;
       const query = searchQuery.toLowerCase();
       const matches =
@@ -89,6 +64,42 @@ export function SelectMappingsStep() {
       return matches ? index : -1;
     })
     .filter(index => index !== -1);
+
+  // Compute selected mappings and their dependencies
+  const selectedMappings = useMemo(() =>
+    entityMappings.filter((_, index) =>
+      selectedMappingKeys.includes(`mapping-${index}`)
+    ),
+    [entityMappings, selectedMappingKeys]
+  );
+
+  // Compute upload order for preview
+  const uploadOrder = useMemo(() =>
+    computeUploadOrder(
+      selectedMappings,
+      entityMappings,
+      targetRelationships,
+      new Set(), // No completed entities yet
+      overriddenPrerequisites
+    ),
+    [selectedMappings, entityMappings, targetRelationships, overriddenPrerequisites]
+  );
+
+  // Get overridable prerequisites (entities not selected but required)
+  const overridablePrereqs = useMemo(() =>
+    getOverridablePrerequisites(selectedMappings, targetRelationships),
+    [selectedMappings, targetRelationships]
+  );
+
+  // Get dependencies for each mapping's target entity
+  const getDependencyInfo = (mapping: typeof entityMappings[0]) => {
+    const selectedTargetEntities = selectedMappings.map(m => m.target_entity);
+    return getEntityDependencies(
+      mapping.target_entity,
+      targetRelationships,
+      selectedTargetEntities
+    );
+  };
 
   const allSelected = filteredMappings.length > 0 &&
     filteredMappingIndices.every(index => selectedMappingKeys.includes(`mapping-${index}`));
@@ -125,25 +136,9 @@ export function SelectMappingsStep() {
   };
 
   // Get unique target entities that will be generated
-  const selectedMappings = entityMappings.filter((_, index) =>
-    selectedMappingKeys.includes(`mapping-${index}`)
-  );
   const targetEntities = [...new Set(
     selectedMappings.map(m => `${m.target_service}.${m.target_entity}`)
   )];
-
-  if (selectedSourceSchemaKeys.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-12 text-center">
-          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-[hsl(var(--muted-foreground))]" />
-          <p className="text-[hsl(var(--muted-foreground))]">
-            No source schemas selected. Please go back and select at least one source schema.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
 
   if (availableMappings.length === 0) {
     return (
@@ -151,10 +146,7 @@ export function SelectMappingsStep() {
         <CardContent className="py-12 text-center">
           <AlertCircle className="h-12 w-12 mx-auto mb-4 text-[hsl(var(--muted-foreground))]" />
           <p className="text-[hsl(var(--muted-foreground))]">
-            No mappings available for the selected source schemas.
-          </p>
-          <p className="text-sm text-[hsl(var(--muted-foreground))] mt-2">
-            Create mappings in the Mappings tab that use: {selectedSourceSchemaKeys.join(', ')}
+            No mappings available. Create mappings in the Mappings tab first.
           </p>
         </CardContent>
       </Card>
@@ -223,6 +215,12 @@ export function SelectMappingsStep() {
             const isExpanded = expandedMappings.has(key);
             const fieldCount = mapping.field_mappings.length;
 
+            // Get dependency information for this mapping
+            const depInfo = getDependencyInfo(mapping);
+            const hasMissingDeps = depInfo.missing.length > 0;
+            const hasSelectedDeps = depInfo.selected.length > 0;
+            const allDepsOverridden = depInfo.missing.every(d => overriddenPrerequisites.has(d));
+
             return (
               <div
                 key={key}
@@ -262,6 +260,20 @@ export function SelectMappingsStep() {
                       <span className="font-medium text-[hsl(var(--primary))]">
                         {mapping.target_service}.{mapping.target_entity}
                       </span>
+                      {/* Dependency indicator */}
+                      {(hasMissingDeps || hasSelectedDeps) && (
+                        <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+                          hasMissingDeps && !allDepsOverridden
+                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                            : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                        }`}>
+                          {hasMissingDeps && !allDepsOverridden ? (
+                            <>Requires: {depInfo.missing.join(', ')}</>
+                          ) : hasSelectedDeps ? (
+                            <>After: {depInfo.selected.join(', ')}</>
+                          ) : null}
+                        </span>
+                      )}
                     </div>
                     <div className="text-sm text-[hsl(var(--muted-foreground))] mt-1">
                       {fieldCount} field {fieldCount === 1 ? 'mapping' : 'mappings'}
@@ -346,6 +358,76 @@ export function SelectMappingsStep() {
           })}
         </CardContent>
       </Card>
+
+      {/* Upload Order Preview */}
+      {selectedMappingKeys.length > 0 && (
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-sm font-medium">Upload Order</CardTitle>
+          </CardHeader>
+          <CardContent className="py-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {uploadOrder.map((item, index) => (
+                <div key={item.targetEntity} className="flex items-center gap-2">
+                  <span className={`px-2 py-1 text-sm rounded border ${
+                    item.dependencyStatus === 'ready' ? 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/30' :
+                    item.dependencyStatus === 'overridden' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30' :
+                    item.dependencyStatus === 'waiting' ? 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] border-[hsl(var(--border))]' :
+                    'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                  }`}>
+                    {index + 1}. {item.targetEntity}
+                  </span>
+                  {index < uploadOrder.length - 1 && (
+                    <ArrowRight className="h-4 w-4 text-[hsl(var(--muted-foreground))]" />
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Override Prerequisites */}
+      {overridablePrereqs.length > 0 && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardHeader className="py-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <CardTitle className="text-sm font-medium text-amber-600 dark:text-amber-400">
+                Missing Prerequisites
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="py-2">
+            <p className="text-sm text-amber-600 dark:text-amber-400 mb-3">
+              The following entities are required but not selected. If they already exist in {targetService}, check them to override:
+            </p>
+            <div className="space-y-2">
+              {overridablePrereqs.map(entity => (
+                <button
+                  key={entity}
+                  onClick={() => togglePrerequisiteOverride(entity)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors w-full text-left ${
+                    overriddenPrerequisites.has(entity)
+                      ? 'border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400'
+                      : 'border-amber-500/30 bg-[hsl(var(--background))] text-amber-600 dark:text-amber-400 hover:bg-amber-500/10'
+                  }`}
+                >
+                  {overriddenPrerequisites.has(entity) ? (
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <Square className="h-4 w-4 text-amber-500" />
+                  )}
+                  <span className="font-medium">{entity}</span>
+                  {overriddenPrerequisites.has(entity) && (
+                    <span className="text-xs text-green-500 ml-auto">Already exists in target</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary */}
       {selectedMappingKeys.length > 0 && (

@@ -291,8 +291,10 @@ class EntityMapping:
     @classmethod
     def from_dict(cls, name: str, data: Dict[str, Any]) -> "EntityMapping":
         """Create from dictionary representation."""
-        source_parts = data.get("source", ".").split(".")
-        target_parts = data.get("target", ".").split(".")
+        source_str = data.get("source") or "."
+        target_str = data.get("target") or "."
+        source_parts = source_str.split(".")
+        target_parts = target_str.split(".")
 
         field_mappings = []
         for fm_data in data.get("field_mappings", []):

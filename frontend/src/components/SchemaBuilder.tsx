@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Trash2, Edit2, Check, X, ChevronDown, ChevronRight, Upload, Sparkles, Database, Search, Save, Loader2, RotateCcw } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, ChevronDown, ChevronRight, Upload, Sparkles, Database, Search, Save, Loader2, RotateCcw, Hash } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Select } from '@/components/ui';
 import { DataInputModal } from '@/components/DataInputModal';
 import { SchemaRelationshipDiagram } from '@/components/SchemaRelationshipDiagram';
@@ -325,6 +325,7 @@ export function SchemaBuilder() {
 
   // Refs for scrolling to schemas
   const schemaRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Handle focus on a schema from sidebar click
   useEffect(() => {
@@ -352,6 +353,43 @@ export function SchemaBuilder() {
     acc[schema.service].push(schema);
     return acc;
   }, {} as Record<string, EntitySchema[]>);
+
+  // Compute all services for quick navigation
+  const allServices = useMemo(() => {
+    const sourceServices = [...new Set(sourceSchemas.map(s => s.service))].map(s => ({
+      service: s,
+      type: 'source' as const,
+      count: sourceSchemas.filter(schema => schema.service === s).length,
+    }));
+    const chargebeeSchemas = schemasByService['chargebee'] || [];
+    const targetServices = chargebeeSchemas.length > 0 ? [{
+      service: 'chargebee',
+      type: 'target' as const,
+      count: chargebeeSchemas.length,
+    }] : [];
+    return [...sourceServices, ...targetServices];
+  }, [sourceSchemas, schemasByService]);
+
+  const scrollToSection = (sectionId: string) => {
+    // First try section refs
+    const sectionElement = sectionRefs.current[sectionId];
+    if (sectionElement) {
+      sectionElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+
+    // For source services, scroll to the first schema of that service
+    if (sectionId.startsWith('source-')) {
+      const service = sectionId.replace('source-', '');
+      const firstSchema = sourceSchemas.find(s => s.service === service);
+      if (firstSchema) {
+        const schemaRef = schemaRefs.current[`${firstSchema.service}-${firstSchema.entity}`];
+        if (schemaRef) {
+          schemaRef.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    }
+  };
 
   // Filter schemas in picker based on search
   const filteredSchemasByService = useMemo(() => {
@@ -535,8 +573,32 @@ export function SchemaBuilder() {
       {/* Entity Relationship Diagram */}
       <SchemaRelationshipDiagram />
 
+      {/* Quick Navigation */}
+      {allServices.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-[hsl(var(--muted-foreground))] flex items-center gap-1">
+            <Hash className="h-3.5 w-3.5" />
+            Jump to:
+          </span>
+          {allServices.map(({ service, type, count }) => (
+            <button
+              key={`${type}-${service}`}
+              onClick={() => scrollToSection(`${type}-${service}`)}
+              className={`px-2.5 py-1 rounded-md text-sm font-medium transition-colors border ${
+                type === 'source' && service === 'stripe' ? "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20" :
+                type === 'source' && service === 'salesforce' ? "border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20" :
+                type === 'source' ? "border-[hsl(var(--border))] bg-[hsl(var(--muted))]/50 text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]" :
+                "border-orange-500/30 bg-orange-500/10 text-orange-600 dark:text-orange-400 hover:bg-orange-500/20"
+              }`}
+            >
+              {service} ({count})
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Source Schemas */}
-      <div>
+      <div ref={(el) => { sectionRefs.current['source-schemas'] = el; }} className="scroll-mt-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-medium">Source Schemas ({sourceSchemas.length})</h3>
           <div className="flex gap-2">
@@ -587,7 +649,7 @@ export function SchemaBuilder() {
       </div>
 
       {/* Target Schemas - Show All Chargebee */}
-      <div>
+      <div ref={(el) => { sectionRefs.current['target-chargebee'] = el; }} className="scroll-mt-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-medium flex items-center gap-2">
             Target Schemas

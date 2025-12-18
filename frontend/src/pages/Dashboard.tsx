@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Clock, CheckCircle, XCircle, Loader2, Trash2, Play, Database, GitBranch, GitMerge, ChevronDown, ChevronRight, ArrowRight, Edit2, Link2, Search, X, LogOut, Sun, Moon, Monitor } from 'lucide-react';
+import { Plus, Clock, CheckCircle, XCircle, Loader2, Trash2, Play, Database, GitBranch, GitMerge, ChevronDown, ChevronRight, ArrowRight, Edit2, Link2, Search, X, LogOut, Sun, Moon, Monitor, Hash } from 'lucide-react';
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Input } from '@/components/ui';
 import { useTheme } from '@/components/ThemeProvider';
 import { Logo } from '@/components/Logo';
@@ -399,6 +399,31 @@ export function Dashboard({ onLogout }: DashboardProps) {
     mappings: filteredMappings.length,
   } : null;
 
+  // Refs for quick navigation
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Get all unique services for quick nav
+  const allServices = useMemo(() => {
+    const sourceServices = [...new Set(sourceSchemas.map(s => s.service))].map(s => ({
+      service: s,
+      type: 'source' as const,
+      count: sourceSchemas.filter(schema => schema.service === s).length,
+    }));
+    const targetServices = targetSchemas.length > 0 ? [{
+      service: 'chargebee',
+      type: 'target' as const,
+      count: targetSchemas.length,
+    }] : [];
+    return [...sourceServices, ...targetServices];
+  }, [sourceSchemas, targetSchemas]);
+
+  const scrollToSection = (sectionId: string) => {
+    const element = sectionRefs.current[sectionId];
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[hsl(var(--background))]">
       <div className="mx-auto max-w-7xl px-4 py-8">
@@ -456,6 +481,37 @@ export function Dashboard({ onLogout }: DashboardProps) {
           )}
         </div>
 
+        {/* Quick Navigation */}
+        {allServices.length > 0 && (
+          <div className="mb-6 flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-[hsl(var(--muted-foreground))] flex items-center gap-1">
+              <Hash className="h-3.5 w-3.5" />
+              Jump to:
+            </span>
+            {allServices.map(({ service, type, count }) => (
+              <button
+                key={`${type}-${service}`}
+                onClick={() => scrollToSection(`${type}-${service}`)}
+                className={cn(
+                  "px-2.5 py-1 rounded-md text-sm font-medium transition-colors border",
+                  type === 'source' && service === 'stripe' && "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20",
+                  type === 'source' && service === 'salesforce' && "border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20",
+                  type === 'source' && service !== 'stripe' && service !== 'salesforce' && "border-[hsl(var(--border))] bg-[hsl(var(--muted))]/50 text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]",
+                  type === 'target' && "border-orange-500/30 bg-orange-500/10 text-orange-600 dark:text-orange-400 hover:bg-orange-500/20"
+                )}
+              >
+                {service} ({count})
+              </button>
+            ))}
+            <button
+              onClick={() => scrollToSection('mappings')}
+              className="px-2.5 py-1 rounded-md text-sm font-medium transition-colors border border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20"
+            >
+              Mappings ({entityMappings.length})
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-6">
           {/* Left column: Schemas & Mappings */}
           <div className="col-span-2 space-y-6">
@@ -478,39 +534,45 @@ export function Dashboard({ onLogout }: DashboardProps) {
                   </Link>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent>
                 {filteredSourceSchemas.length === 0 ? (
                   <p className="text-sm text-[hsl(var(--muted-foreground))] py-4 text-center">
                     {searchTerm ? 'No matching source schemas' : 'No source schemas defined'}
                   </p>
                 ) : (
-                  Object.entries(schemasByService).map(([service, schemas]) => (
-                    <div key={service}>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={cn(
-                          "px-2 py-0.5 rounded text-xs font-medium uppercase",
-                          service === 'stripe' && "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-                          service === 'salesforce' && "bg-green-500/10 text-green-600 dark:text-green-400"
-                        )}>
-                          {service}
-                        </span>
-                        <span className="text-xs text-[hsl(var(--muted-foreground))]">
-                          {schemas.length} entities
-                        </span>
+                  <div className="space-y-4 max-h-96 overflow-y-auto">
+                    {Object.entries(schemasByService).map(([service, schemas]) => (
+                      <div
+                        key={service}
+                        ref={(el) => { sectionRefs.current[`source-${service}`] = el; }}
+                        className="scroll-mt-4"
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={cn(
+                            "px-2 py-0.5 rounded text-xs font-medium uppercase",
+                            service === 'stripe' && "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+                            service === 'salesforce' && "bg-green-500/10 text-green-600 dark:text-green-400"
+                          )}>
+                            {service}
+                          </span>
+                          <span className="text-xs text-[hsl(var(--muted-foreground))]">
+                            {schemas.length} entities
+                          </span>
+                        </div>
+                        <div className="space-y-2 pl-2 border-l-2 border-[hsl(var(--border))]">
+                          {schemas.map((schema) => (
+                            <SchemaCard key={`${schema.service}-${schema.entity}`} schema={schema} searchTerm={searchTerm} />
+                          ))}
+                        </div>
                       </div>
-                      <div className="space-y-2 pl-2 border-l-2 border-[hsl(var(--border))]">
-                        {schemas.map((schema) => (
-                          <SchemaCard key={`${schema.service}-${schema.entity}`} schema={schema} searchTerm={searchTerm} />
-                        ))}
-                      </div>
-                    </div>
-                  ))
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>
 
             {/* Target Schemas - Chargebee */}
-            <Card>
+            <Card ref={(el) => { sectionRefs.current['target-chargebee'] = el; }} className="scroll-mt-4">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
@@ -555,7 +617,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
             </Card>
 
             {/* Mappings - Grouped by Target */}
-            <Card>
+            <Card ref={(el) => { sectionRefs.current['mappings'] = el; }} className="scroll-mt-4">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
@@ -591,32 +653,34 @@ export function Dashboard({ onLogout }: DashboardProps) {
                   )}
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent>
                 {filteredMappings.length === 0 ? (
                   <p className="text-sm text-[hsl(var(--muted-foreground))] py-4 text-center">
                     {searchTerm ? 'No matching mappings' : 'No mappings defined'}
                   </p>
                 ) : (
-                  Object.entries(mappingsByTarget).map(([targetKey, mappings]) => {
-                    const [, targetEntity] = targetKey.split(':');
-                    return (
-                      <div key={targetKey}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-500/10 text-orange-600 dark:text-orange-400">
-                            → <HighlightMatch text={targetEntity} search={searchTerm} />
-                          </span>
-                          <span className="text-xs text-[hsl(var(--muted-foreground))]">
-                            {mappings.length} mapping{mappings.length !== 1 ? 's' : ''}
-                          </span>
+                  <div className="space-y-4 max-h-96 overflow-y-auto">
+                    {Object.entries(mappingsByTarget).map(([targetKey, mappings]) => {
+                      const [, targetEntity] = targetKey.split(':');
+                      return (
+                        <div key={targetKey}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-500/10 text-orange-600 dark:text-orange-400">
+                              → <HighlightMatch text={targetEntity} search={searchTerm} />
+                            </span>
+                            <span className="text-xs text-[hsl(var(--muted-foreground))]">
+                              {mappings.length} mapping{mappings.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <div className="space-y-2 pl-2 border-l-2 border-orange-500/30">
+                            {mappings.map((mapping, idx) => (
+                              <DashboardMappingCard key={idx} mapping={mapping} searchTerm={searchTerm} />
+                            ))}
+                          </div>
                         </div>
-                        <div className="space-y-2 pl-2 border-l-2 border-orange-500/30">
-                          {mappings.map((mapping, idx) => (
-                            <DashboardMappingCard key={idx} mapping={mapping} searchTerm={searchTerm} />
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })
+                      );
+                    })}
+                  </div>
                 )}
               </CardContent>
             </Card>

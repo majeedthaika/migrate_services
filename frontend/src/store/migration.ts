@@ -107,21 +107,26 @@ interface MigrationWorkspaceState {
   discardSchemaChanges: () => void;
   discardMappingChanges: () => void;
 
-  // Migration Run State (for the 5-step migration wizard)
-  migrationRunStep: 1 | 2 | 3 | 4 | 5;
-  setMigrationRunStep: (step: 1 | 2 | 3 | 4 | 5) => void;
+  // Migration Run State (for the 4-step migration wizard)
+  migrationRunStep: 1 | 2 | 3 | 4;
+  setMigrationRunStep: (step: 1 | 2 | 3 | 4) => void;
 
-  // Step 1: Selected source schemas
-  selectedSourceSchemaKeys: string[];
-  setSelectedSourceSchemaKeys: (keys: string[]) => void;
-  toggleSourceSchemaSelection: (key: string) => void;
-
-  // Step 2: Selected mappings (filtered by selected schemas)
+  // Step 1: Selected mappings (directly, no schema filtering)
   selectedMappingKeys: string[];
   setSelectedMappingKeys: (keys: string[]) => void;
   toggleMappingSelection: (key: string) => void;
 
-  // Step 3: Uploaded source data
+  // Prerequisite overrides (entities that already exist in target)
+  overriddenPrerequisites: Set<string>;
+  togglePrerequisiteOverride: (entity: string) => void;
+  clearPrerequisiteOverrides: () => void;
+
+  // Legacy: selectedSourceSchemaKeys (derived from selected mappings now)
+  selectedSourceSchemaKeys: string[];
+  setSelectedSourceSchemaKeys: (keys: string[]) => void;
+  toggleSourceSchemaSelection: (key: string) => void;
+
+  // Step 2: Uploaded source data
   uploadedSourceData: Record<string, {
     fileName: string;
     data: Record<string, unknown>[];
@@ -136,7 +141,7 @@ interface MigrationWorkspaceState {
   }) => void;
   clearUploadedSourceData: () => void;
 
-  // Step 4: Transformation
+  // Step 3: Transformation
   transformMode: 'sample' | 'full';
   setTransformMode: (mode: 'sample' | 'full') => void;
   sampleSize: number;
@@ -146,7 +151,7 @@ interface MigrationWorkspaceState {
   transformErrors: { entity: string; row: number; error: string }[];
   setTransformErrors: (errors: { entity: string; row: number; error: string }[]) => void;
 
-  // Step 5: Upload to target
+  // Step 4: Upload to target
   uploadProgress: {
     total: number;
     processed: number;
@@ -2155,8 +2160,9 @@ const seedSources: DataSource[] = [
 const seedEntityMappings: EntityMapping[] = [
   // ============================================================================
   // MAPPING 1: Multi-source Customer mapping (many:1)
-  // Stripe Customer + Salesforce Contact -> Chargebee Customer
-  // Joined on email field - combines billing data from Stripe with CRM data from Salesforce
+  // Stripe Customer + Salesforce Contact + Salesforce Account -> Chargebee Customer
+  // Joined on email field (Stripe to Contact) and AccountId (Contact to Account)
+  // Combines billing data from Stripe with CRM contact and company data from Salesforce
   // ============================================================================
   {
     source_service: 'stripe',
@@ -2166,6 +2172,7 @@ const seedEntityMappings: EntityMapping[] = [
     cardinality: 'many:1',
     additional_sources: [
       { service: 'salesforce', entity: 'Contact', join_key: 'Email' },
+      { service: 'salesforce', entity: 'Account', join_key: 'Id' },
     ],
     join_config: {
       type: 'left',
@@ -2177,223 +2184,354 @@ const seedEntityMappings: EntityMapping[] = [
           right_source: { service: 'salesforce', entity: 'Contact' },
           right_field: 'Email',
         },
+        {
+          left_source: { service: 'salesforce', entity: 'Contact' },
+          left_field: 'AccountId',
+          right_source: { service: 'salesforce', entity: 'Account' },
+          right_field: 'Id',
+        },
       ],
     },
     field_mappings: [
       // === Primary identifiers ===
       { source_field: 'id', target_field: 'id', transform: 'prefix', config: { prefix: 'stripe_' }, source_service: 'stripe', source_entity: 'Customer' },
-      { source_field: 'Id', target_field: 'meta_data.salesforce_id', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Contact' },
+      { source_field: 'Id', target_field: 'meta_data.salesforce_contact_id', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Contact' },
+      { source_field: 'Id', target_field: 'meta_data.salesforce_account_id', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Account' },
 
-      // === Contact information ===
+      // === Contact information (Salesforce Contact preferred, Stripe fallback) ===
       { source_field: 'email', target_field: 'email', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
-      { source_field: 'FirstName', target_field: 'first_name', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Contact' },
-      { source_field: 'LastName', target_field: 'last_name', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Contact' },
-      { source_field: 'name', target_field: 'first_name', transform: 'split_name', config: { part: 'first', fallback: true }, source_service: 'stripe', source_entity: 'Customer' },
-      { source_field: 'name', target_field: 'last_name', transform: 'split_name', config: { part: 'last', fallback: true }, source_service: 'stripe', source_entity: 'Customer' },
-      { source_field: 'phone', target_field: 'phone', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
-      { source_field: 'MobilePhone', target_field: 'phone', transform: 'direct', config: { fallback: true }, source_service: 'salesforce', source_entity: 'Contact' },
+      { source_field: 'FirstName', target_field: 'first_name', transform: 'direct', config: { priority: 1 }, source_service: 'salesforce', source_entity: 'Contact' },
+      { source_field: 'LastName', target_field: 'last_name', transform: 'direct', config: { priority: 1 }, source_service: 'salesforce', source_entity: 'Contact' },
+      { source_field: 'name', target_field: 'first_name', transform: 'split_name', config: { part: 'first', priority: 2, fallback: true }, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'name', target_field: 'last_name', transform: 'split_name', config: { part: 'last', priority: 2, fallback: true }, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'Phone', target_field: 'phone', transform: 'direct', config: { priority: 1 }, source_service: 'salesforce', source_entity: 'Contact' },
+      { source_field: 'phone', target_field: 'phone', transform: 'direct', config: { priority: 2, fallback: true }, source_service: 'stripe', source_entity: 'Customer' },
 
-      // === Billing address from Stripe ===
-      { source_field: 'address.line1', target_field: 'billing_address.line1', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
+      // === Company information from Salesforce Account ===
+      { source_field: 'Name', target_field: 'company', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Account' },
+      { source_field: 'Industry', target_field: 'meta_data.industry', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Account' },
+      { source_field: 'AnnualRevenue', target_field: 'meta_data.annual_revenue', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Account' },
+      { source_field: 'NumberOfEmployees', target_field: 'meta_data.employee_count', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Account' },
+      { source_field: 'Website', target_field: 'meta_data.website', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Account' },
+      { source_field: 'Type', target_field: 'meta_data.account_type', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Account' },
+
+      // === Billing address (Stripe primary, Salesforce Account fallback) ===
+      { source_field: 'address.line1', target_field: 'billing_address.line1', transform: 'direct', config: { priority: 1 }, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'BillingStreet', target_field: 'billing_address.line1', transform: 'direct', config: { priority: 2, fallback: true }, source_service: 'salesforce', source_entity: 'Account' },
       { source_field: 'address.line2', target_field: 'billing_address.line2', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
-      { source_field: 'address.city', target_field: 'billing_address.city', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
-      { source_field: 'address.state', target_field: 'billing_address.state', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
-      { source_field: 'address.postal_code', target_field: 'billing_address.zip', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'address.city', target_field: 'billing_address.city', transform: 'direct', config: { priority: 1 }, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'BillingCity', target_field: 'billing_address.city', transform: 'direct', config: { priority: 2, fallback: true }, source_service: 'salesforce', source_entity: 'Account' },
+      { source_field: 'address.state', target_field: 'billing_address.state', transform: 'direct', config: { priority: 1 }, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'BillingState', target_field: 'billing_address.state', transform: 'direct', config: { priority: 2, fallback: true }, source_service: 'salesforce', source_entity: 'Account' },
+      { source_field: 'address.postal_code', target_field: 'billing_address.zip', transform: 'direct', config: { priority: 1 }, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'BillingPostalCode', target_field: 'billing_address.zip', transform: 'direct', config: { priority: 2, fallback: true }, source_service: 'salesforce', source_entity: 'Account' },
       { source_field: 'address.country', target_field: 'billing_address.country', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
 
       // === Billing settings ===
       { source_field: 'currency', target_field: 'preferred_currency_code', transform: 'uppercase', config: {}, source_service: 'stripe', source_entity: 'Customer' },
-      { source_field: 'balance', target_field: 'excess_payments', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'balance', target_field: 'promotional_credits', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
       { source_field: 'tax_exempt', target_field: 'taxability', transform: 'map_value', config: { mapping: { 'none': 'taxable', 'exempt': 'exempt', 'reverse': 'exempt' } }, source_service: 'stripe', source_entity: 'Customer' },
       { source_field: 'delinquent', target_field: 'auto_collection', transform: 'map_value', config: { mapping: { true: 'off', false: 'on' } }, source_service: 'stripe', source_entity: 'Customer' },
-      { source_field: 'preferred_locales', target_field: 'locale', transform: 'array_first', config: {}, source_service: 'stripe', source_entity: 'Customer' },
-      { source_field: 'created', target_field: 'created_at', transform: 'unix_to_timestamp', config: {}, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'created', target_field: 'created_at', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
 
-      // === Salesforce enrichment ===
+      // === Salesforce Contact enrichment ===
       { source_field: 'Title', target_field: 'meta_data.job_title', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Contact' },
       { source_field: 'Department', target_field: 'meta_data.department', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Contact' },
-      { source_field: 'AccountId', target_field: 'meta_data.salesforce_account_id', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Contact' },
       { source_field: 'LeadSource', target_field: 'meta_data.lead_source', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Contact' },
       { source_field: 'HasOptedOutOfEmail', target_field: 'meta_data.email_opt_out', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Contact' },
-      { source_field: 'metadata', target_field: 'meta_data.stripe_metadata', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'DoNotCall', target_field: 'meta_data.do_not_call', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Contact' },
+      { source_field: 'metadata', target_field: 'meta_data.stripe_metadata', transform: 'merge_objects', config: {}, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'id', target_field: 'meta_data.stripe_customer_id', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
     ],
   },
 
   // ============================================================================
-  // MAPPING 2: Stripe Subscription -> Chargebee Subscription (1:1)
-  // Direct mapping with status transformation
+  // MAPPING 2: Multi-source Subscription mapping (many:1)
+  // Stripe Subscription + Customer + Salesforce Contact + Opportunity -> Chargebee Subscription
+  // Joins through Customer email to Salesforce for sales attribution
   // ============================================================================
   {
     source_service: 'stripe',
     source_entity: 'Subscription',
     target_service: 'chargebee',
     target_entity: 'Subscription',
-    cardinality: '1:1',
+    cardinality: 'many:1',
+    additional_sources: [
+      { service: 'stripe', entity: 'Customer', join_key: 'id' },
+      { service: 'salesforce', entity: 'Contact', join_key: 'Email' },
+      { service: 'salesforce', entity: 'Opportunity', join_key: 'AccountId' },
+    ],
+    join_config: {
+      type: 'left',
+      primary_source: { service: 'stripe', entity: 'Subscription' },
+      join_conditions: [
+        {
+          left_source: { service: 'stripe', entity: 'Subscription' },
+          left_field: 'customer',
+          right_source: { service: 'stripe', entity: 'Customer' },
+          right_field: 'id',
+        },
+        {
+          left_source: { service: 'stripe', entity: 'Customer' },
+          left_field: 'email',
+          right_source: { service: 'salesforce', entity: 'Contact' },
+          right_field: 'Email',
+        },
+        {
+          left_source: { service: 'salesforce', entity: 'Contact' },
+          left_field: 'AccountId',
+          right_source: { service: 'salesforce', entity: 'Opportunity' },
+          right_field: 'AccountId',
+        },
+      ],
+    },
     field_mappings: [
-      { source_field: 'id', target_field: 'id', transform: 'prefix', config: { prefix: 'stripe_' } },
-      { source_field: 'customer', target_field: 'customer_id', transform: 'prefix', config: { prefix: 'stripe_' } },
+      // === Core subscription fields ===
+      { source_field: 'id', target_field: 'id', transform: 'prefix', config: { prefix: 'stripe_' }, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'customer', target_field: 'customer_id', transform: 'prefix', config: { prefix: 'stripe_' }, source_service: 'stripe', source_entity: 'Subscription' },
       { source_field: 'status', target_field: 'status', transform: 'map_value', config: {
         mapping: {
           'active': 'active',
           'trialing': 'in_trial',
           'past_due': 'active',
           'canceled': 'cancelled',
-          'unpaid': 'active',
+          'unpaid': 'non_renewing',
           'incomplete': 'future',
           'incomplete_expired': 'cancelled',
           'paused': 'paused'
         }
-      }},
-      { source_field: 'current_period_start', target_field: 'current_term_start', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'current_period_end', target_field: 'current_term_end', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'billing_cycle_anchor', target_field: 'next_billing_at', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'created', target_field: 'created_at', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'start_date', target_field: 'started_at', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'trial_start', target_field: 'trial_start', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'trial_end', target_field: 'trial_end', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'canceled_at', target_field: 'cancelled_at', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'cancel_at_period_end', target_field: 'cancel_at_term_end', transform: 'direct', config: {} },
-      { source_field: 'collection_method', target_field: 'auto_collection', transform: 'map_value', config: { mapping: { 'charge_automatically': 'on', 'send_invoice': 'off' } } },
-      { source_field: 'currency', target_field: 'currency_code', transform: 'uppercase', config: {} },
-      { source_field: 'description', target_field: 'meta_data.description', transform: 'direct', config: {} },
-      { source_field: 'metadata', target_field: 'meta_data', transform: 'direct', config: {} },
+      }, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'current_period_start', target_field: 'current_term_start', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'current_period_end', target_field: 'current_term_end', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'current_period_end', target_field: 'next_billing_at', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'created', target_field: 'created_at', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'start_date', target_field: 'started_at', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'trial_start', target_field: 'trial_start', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'trial_end', target_field: 'trial_end', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'canceled_at', target_field: 'cancelled_at', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'collection_method', target_field: 'auto_collection', transform: 'map_value', config: { mapping: { 'charge_automatically': 'on', 'send_invoice': 'off' } }, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'currency', target_field: 'currency_code', transform: 'uppercase', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+
+      // === Customer enrichment ===
+      { source_field: 'email', target_field: 'meta_data.customer_email', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
+
+      // === Salesforce Opportunity enrichment (sales attribution) ===
+      { source_field: 'Id', target_field: 'meta_data.salesforce_opportunity_id', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Opportunity' },
+      { source_field: 'Name', target_field: 'meta_data.opportunity_name', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Opportunity' },
+      { source_field: 'Amount', target_field: 'meta_data.opportunity_amount', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Opportunity' },
+      { source_field: 'CloseDate', target_field: 'meta_data.opportunity_close_date', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Opportunity' },
+      { source_field: 'LeadSource', target_field: 'meta_data.lead_source', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Opportunity' },
+      { source_field: 'OwnerId', target_field: 'meta_data.salesforce_owner_id', transform: 'direct', config: {}, source_service: 'salesforce', source_entity: 'Contact' },
+
+      // === Metadata ===
+      { source_field: 'id', target_field: 'meta_data.stripe_subscription_id', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'default_payment_method', target_field: 'meta_data.stripe_payment_method_id', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'billing_cycle_anchor', target_field: 'meta_data.billing_cycle_anchor', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+      { source_field: 'metadata', target_field: 'meta_data', transform: 'merge_objects', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
     ],
   },
 
   // ============================================================================
-  // MAPPING 3: Stripe Invoice -> Chargebee Invoice (1:1)
-  // Comprehensive invoice data migration
+  // MAPPING 3: Multi-source Invoice mapping (many:1)
+  // Stripe Invoice + Customer + Subscription -> Chargebee Invoice
+  // Joins to get customer and subscription context
   // ============================================================================
   {
     source_service: 'stripe',
     source_entity: 'Invoice',
     target_service: 'chargebee',
     target_entity: 'Invoice',
-    cardinality: '1:1',
+    cardinality: 'many:1',
+    additional_sources: [
+      { service: 'stripe', entity: 'Customer', join_key: 'id' },
+      { service: 'stripe', entity: 'Subscription', join_key: 'id' },
+    ],
+    join_config: {
+      type: 'left',
+      primary_source: { service: 'stripe', entity: 'Invoice' },
+      join_conditions: [
+        {
+          left_source: { service: 'stripe', entity: 'Invoice' },
+          left_field: 'customer',
+          right_source: { service: 'stripe', entity: 'Customer' },
+          right_field: 'id',
+        },
+        {
+          left_source: { service: 'stripe', entity: 'Invoice' },
+          left_field: 'subscription',
+          right_source: { service: 'stripe', entity: 'Subscription' },
+          right_field: 'id',
+        },
+      ],
+    },
     field_mappings: [
-      { source_field: 'id', target_field: 'id', transform: 'prefix', config: { prefix: 'stripe_' } },
-      { source_field: 'customer', target_field: 'customer_id', transform: 'prefix', config: { prefix: 'stripe_' } },
-      { source_field: 'subscription', target_field: 'subscription_id', transform: 'prefix', config: { prefix: 'stripe_' } },
-      { source_field: 'number', target_field: 'invoice_number', transform: 'direct', config: {} },
+      // === Core invoice fields ===
+      { source_field: 'id', target_field: 'id', transform: 'prefix', config: { prefix: 'stripe_' }, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'customer', target_field: 'customer_id', transform: 'prefix', config: { prefix: 'stripe_' }, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'subscription', target_field: 'subscription_id', transform: 'prefix', config: { prefix: 'stripe_' }, source_service: 'stripe', source_entity: 'Invoice' },
       { source_field: 'status', target_field: 'status', transform: 'map_value', config: {
         mapping: {
           'draft': 'pending',
-          'open': 'posted',
+          'open': 'payment_due',
           'paid': 'paid',
-          'uncollectible': 'voided',
+          'uncollectible': 'not_paid',
           'void': 'voided'
         }
-      }},
-      { source_field: 'currency', target_field: 'currency_code', transform: 'uppercase', config: {} },
-      { source_field: 'amount_due', target_field: 'total', transform: 'direct', config: {} },
-      { source_field: 'amount_paid', target_field: 'amount_paid', transform: 'direct', config: {} },
-      { source_field: 'amount_remaining', target_field: 'amount_due', transform: 'direct', config: {} },
-      { source_field: 'subtotal', target_field: 'sub_total', transform: 'direct', config: {} },
-      { source_field: 'tax', target_field: 'tax', transform: 'direct', config: {} },
-      { source_field: 'due_date', target_field: 'due_date', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'created', target_field: 'date', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'period_start', target_field: 'billing_period_start', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'period_end', target_field: 'billing_period_end', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'billing_reason', target_field: 'meta_data.billing_reason', transform: 'direct', config: {} },
-      { source_field: 'collection_method', target_field: 'dunning_status', transform: 'map_value', config: { mapping: { 'charge_automatically': 'in_progress', 'send_invoice': null } } },
-      { source_field: 'attempted', target_field: 'meta_data.payment_attempted', transform: 'direct', config: {} },
-      { source_field: 'attempt_count', target_field: 'dunning_attempts', transform: 'direct', config: {} },
-      { source_field: 'paid', target_field: 'paid_at', transform: 'conditional_timestamp', config: { condition: 'equals', value: true } },
-      { source_field: 'customer_email', target_field: 'billing_address.email', transform: 'direct', config: {} },
-      { source_field: 'customer_name', target_field: 'billing_address.first_name', transform: 'split_name', config: { part: 'first' } },
-      { source_field: 'description', target_field: 'notes', transform: 'direct', config: {} },
-      { source_field: 'footer', target_field: 'meta_data.footer', transform: 'direct', config: {} },
-      { source_field: 'hosted_invoice_url', target_field: 'meta_data.stripe_hosted_url', transform: 'direct', config: {} },
-      { source_field: 'invoice_pdf', target_field: 'meta_data.stripe_pdf_url', transform: 'direct', config: {} },
-      { source_field: 'metadata', target_field: 'meta_data.stripe_metadata', transform: 'direct', config: {} },
+      }, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'currency', target_field: 'currency_code', transform: 'uppercase', config: {}, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'total', target_field: 'total', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'subtotal', target_field: 'sub_total', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'amount_paid', target_field: 'amount_paid', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'amount_due', target_field: 'amount_due', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'created', target_field: 'date', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'created', target_field: 'created_at', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'due_date', target_field: 'due_date', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Invoice' },
+
+      // === Customer enrichment ===
+      { source_field: 'email', target_field: 'meta_data.customer_email', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'name', target_field: 'meta_data.customer_name', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
+
+      // === Subscription enrichment ===
+      { source_field: 'status', target_field: 'meta_data.subscription_status', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Subscription' },
+
+      // === Metadata ===
+      { source_field: 'id', target_field: 'meta_data.stripe_invoice_id', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'number', target_field: 'meta_data.stripe_invoice_number', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'invoice_pdf', target_field: 'meta_data.stripe_invoice_pdf', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Invoice' },
+      { source_field: 'hosted_invoice_url', target_field: 'meta_data.stripe_hosted_url', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Invoice' },
     ],
   },
 
   // ============================================================================
-  // MAPPING 4: Stripe Product -> Chargebee Item + ItemPrice (1:many)
-  // Maps Stripe products to both Item and ItemPrice in Chargebee
+  // MAPPING 4: Stripe Product -> Chargebee Item (1:1)
+  // Maps Stripe products to Items in Chargebee product catalog
   // ============================================================================
   {
     source_service: 'stripe',
     source_entity: 'Product',
     target_service: 'chargebee',
     target_entity: 'Item',
-    cardinality: '1:many',
-    additional_targets: [
-      { service: 'chargebee', entity: 'ItemPrice' },
-    ],
+    cardinality: '1:1',
     field_mappings: [
       { source_field: 'id', target_field: 'id', transform: 'prefix', config: { prefix: 'stripe_' } },
       { source_field: 'name', target_field: 'name', transform: 'direct', config: {} },
+      { source_field: 'name', target_field: 'external_name', transform: 'direct', config: {} },
       { source_field: 'description', target_field: 'description', transform: 'direct', config: {} },
       { source_field: 'active', target_field: 'status', transform: 'map_value', config: { mapping: { true: 'active', false: 'archived' } } },
-      { source_field: 'unit_label', target_field: 'unit', transform: 'direct', config: {} },
-      { source_field: 'statement_descriptor', target_field: 'meta_data.statement_descriptor', transform: 'direct', config: {} },
+      // Item type is required - default to 'plan' since Stripe Products are usually recurring
+      { source_field: '_constant', target_field: 'type', transform: 'constant', config: { value: 'plan' } },
+      { source_field: 'shippable', target_field: 'is_shippable', transform: 'direct', config: {} },
       { source_field: 'url', target_field: 'redirect_url', transform: 'direct', config: {} },
-      { source_field: 'created', target_field: 'meta_data.created_at', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'metadata', target_field: 'meta_data.stripe_metadata', transform: 'direct', config: {} },
-      { source_field: 'livemode', target_field: 'meta_data.stripe_livemode', transform: 'direct', config: {} },
+      { source_field: 'id', target_field: 'metadata.stripe_product_id', transform: 'direct', config: {} },
+      { source_field: 'created', target_field: 'metadata.created_at', transform: 'unix_to_timestamp', config: {} },
+      { source_field: 'metadata', target_field: 'metadata.stripe_metadata', transform: 'direct', config: {} },
+      { source_field: 'tax_code', target_field: 'metadata.tax_code', transform: 'direct', config: {} },
     ],
   },
 
   // ============================================================================
-  // MAPPING 5: Stripe Price -> Chargebee ItemPrice (1:1)
-  // Maps Stripe prices to Chargebee item pricing
+  // MAPPING 5: Multi-source Price -> ItemPrice mapping (many:1)
+  // Stripe Price + Product -> Chargebee ItemPrice
+  // Joins to get product name and description
   // ============================================================================
   {
     source_service: 'stripe',
     source_entity: 'Price',
     target_service: 'chargebee',
     target_entity: 'ItemPrice',
-    cardinality: '1:1',
+    cardinality: 'many:1',
+    additional_sources: [
+      { service: 'stripe', entity: 'Product', join_key: 'id' },
+    ],
+    join_config: {
+      type: 'inner',
+      primary_source: { service: 'stripe', entity: 'Price' },
+      join_conditions: [
+        {
+          left_source: { service: 'stripe', entity: 'Price' },
+          left_field: 'product',
+          right_source: { service: 'stripe', entity: 'Product' },
+          right_field: 'id',
+        },
+      ],
+    },
     field_mappings: [
-      { source_field: 'id', target_field: 'id', transform: 'prefix', config: { prefix: 'stripe_' } },
-      { source_field: 'product', target_field: 'item_id', transform: 'prefix', config: { prefix: 'stripe_' } },
-      { source_field: 'nickname', target_field: 'name', transform: 'direct', config: {} },
-      { source_field: 'active', target_field: 'status', transform: 'map_value', config: { mapping: { true: 'active', false: 'archived' } } },
-      { source_field: 'unit_amount', target_field: 'price', transform: 'direct', config: {} },
-      { source_field: 'currency', target_field: 'currency_code', transform: 'uppercase', config: {} },
-      { source_field: 'type', target_field: 'item_type', transform: 'map_value', config: { mapping: { 'recurring': 'plan', 'one_time': 'addon' } } },
-      { source_field: 'billing_scheme', target_field: 'pricing_model', transform: 'map_value', config: { mapping: { 'per_unit': 'per_unit', 'tiered': 'tiered' } } },
-      { source_field: 'recurring.interval', target_field: 'period_unit', transform: 'map_value', config: { mapping: { 'day': 'day', 'week': 'week', 'month': 'month', 'year': 'year' } } },
-      { source_field: 'recurring.interval_count', target_field: 'period', transform: 'direct', config: {} },
-      { source_field: 'recurring.usage_type', target_field: 'meta_data.usage_type', transform: 'direct', config: {} },
-      { source_field: 'tax_behavior', target_field: 'is_taxable', transform: 'map_value', config: { mapping: { 'exclusive': true, 'inclusive': true, 'unspecified': false } } },
-      { source_field: 'lookup_key', target_field: 'external_name', transform: 'direct', config: {} },
-      { source_field: 'created', target_field: 'meta_data.created_at', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'metadata', target_field: 'meta_data.stripe_metadata', transform: 'direct', config: {} },
+      // === Core ItemPrice fields (required) ===
+      { source_field: 'id', target_field: 'id', transform: 'prefix', config: { prefix: 'stripe_' }, source_service: 'stripe', source_entity: 'Price' },
+      { source_field: 'product', target_field: 'item_id', transform: 'prefix', config: { prefix: 'stripe_' }, source_service: 'stripe', source_entity: 'Price' },
+      { source_field: 'nickname', target_field: 'name', transform: 'coalesce', config: { fallback_field: 'Product.name', default: 'Unnamed Price' }, source_service: 'stripe', source_entity: 'Price' },
+      { source_field: 'currency', target_field: 'currency_code', transform: 'uppercase', config: {}, source_service: 'stripe', source_entity: 'Price' },
+      // pricing_model is required - map billing_scheme with default 'flat_fee'
+      { source_field: 'billing_scheme', target_field: 'pricing_model', transform: 'map_value', config: { mapping: { 'per_unit': 'per_unit', 'tiered': 'tiered' }, default: 'flat_fee' }, source_service: 'stripe', source_entity: 'Price' },
+
+      // === Price and status ===
+      { source_field: 'unit_amount', target_field: 'price', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Price' },
+      { source_field: 'active', target_field: 'status', transform: 'map_value', config: { mapping: { true: 'active', false: 'archived' } }, source_service: 'stripe', source_entity: 'Price' },
+
+      // === Recurring billing fields ===
+      { source_field: 'recurring.interval', target_field: 'period_unit', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Price' },
+      { source_field: 'recurring.interval_count', target_field: 'period', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Price' },
+      { source_field: 'recurring.trial_period_days', target_field: 'trial_period', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Price' },
+      { source_field: 'created', target_field: 'created_at', transform: 'unix_to_timestamp', config: {}, source_service: 'stripe', source_entity: 'Price' },
+
+      // === Product enrichment ===
+      { source_field: 'name', target_field: 'external_name', transform: 'truncate', config: { max_length: 100 }, source_service: 'stripe', source_entity: 'Product' },
+      { source_field: 'description', target_field: 'description', transform: 'truncate', config: { max_length: 500 }, source_service: 'stripe', source_entity: 'Product' },
+
+      // === Metadata ===
+      { source_field: 'id', target_field: 'metadata.stripe_price_id', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Price' },
+      { source_field: 'id', target_field: 'metadata.stripe_product_id', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Product' },
+      { source_field: 'tax_code', target_field: 'metadata.tax_code', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Product' },
+      { source_field: 'metadata', target_field: 'metadata.stripe_metadata', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Price' },
     ],
   },
 
   // ============================================================================
-  // MAPPING 6: Stripe PaymentMethod -> Chargebee PaymentSource (1:1)
-  // Maps payment methods for card-based payments
+  // MAPPING 6: Multi-source PaymentMethod -> PaymentSource mapping (many:1)
+  // Stripe PaymentMethod + Customer -> Chargebee PaymentSource
+  // Joins to determine if payment method is customer's default
   // ============================================================================
   {
     source_service: 'stripe',
     source_entity: 'PaymentMethod',
     target_service: 'chargebee',
     target_entity: 'PaymentSource',
-    cardinality: '1:1',
+    cardinality: 'many:1',
+    additional_sources: [
+      { service: 'stripe', entity: 'Customer', join_key: 'id' },
+    ],
+    join_config: {
+      type: 'left',
+      primary_source: { service: 'stripe', entity: 'PaymentMethod' },
+      join_conditions: [
+        {
+          left_source: { service: 'stripe', entity: 'PaymentMethod' },
+          left_field: 'customer',
+          right_source: { service: 'stripe', entity: 'Customer' },
+          right_field: 'id',
+        },
+      ],
+    },
     field_mappings: [
-      { source_field: 'id', target_field: 'id', transform: 'prefix', config: { prefix: 'stripe_' } },
-      { source_field: 'customer', target_field: 'customer_id', transform: 'prefix', config: { prefix: 'stripe_' } },
-      { source_field: 'type', target_field: 'type', transform: 'map_value', config: { mapping: { 'card': 'card', 'bank_account': 'direct_debit', 'sepa_debit': 'direct_debit' } } },
-      { source_field: 'card.brand', target_field: 'card.brand', transform: 'map_value', config: { mapping: { 'visa': 'visa', 'mastercard': 'mastercard', 'amex': 'american_express', 'discover': 'discover', 'diners': 'diners_club', 'jcb': 'jcb' } } },
-      { source_field: 'card.last4', target_field: 'card.last4', transform: 'direct', config: {} },
-      { source_field: 'card.exp_month', target_field: 'card.expiry_month', transform: 'direct', config: {} },
-      { source_field: 'card.exp_year', target_field: 'card.expiry_year', transform: 'direct', config: {} },
-      { source_field: 'card.funding', target_field: 'card.funding_type', transform: 'map_value', config: { mapping: { 'credit': 'credit', 'debit': 'debit', 'prepaid': 'prepaid' } } },
-      { source_field: 'billing_details.name', target_field: 'card.billing_address.first_name', transform: 'split_name', config: { part: 'first' } },
-      { source_field: 'billing_details.email', target_field: 'card.billing_address.email', transform: 'direct', config: {} },
-      { source_field: 'billing_details.phone', target_field: 'card.billing_address.phone', transform: 'direct', config: {} },
-      { source_field: 'billing_details.address.line1', target_field: 'card.billing_address.line1', transform: 'direct', config: {} },
-      { source_field: 'billing_details.address.city', target_field: 'card.billing_address.city', transform: 'direct', config: {} },
-      { source_field: 'billing_details.address.state', target_field: 'card.billing_address.state', transform: 'direct', config: {} },
-      { source_field: 'billing_details.address.postal_code', target_field: 'card.billing_address.zip', transform: 'direct', config: {} },
-      { source_field: 'billing_details.address.country', target_field: 'card.billing_address.country', transform: 'direct', config: {} },
-      { source_field: 'created', target_field: 'created_at', transform: 'unix_to_timestamp', config: {} },
-      { source_field: 'livemode', target_field: 'meta_data.stripe_livemode', transform: 'direct', config: {} },
+      // === Core payment method fields ===
+      { source_field: 'id', target_field: 'id', transform: 'prefix', config: { prefix: 'stripe_' }, source_service: 'stripe', source_entity: 'PaymentMethod' },
+      { source_field: 'customer', target_field: 'customer_id', transform: 'prefix', config: { prefix: 'stripe_' }, source_service: 'stripe', source_entity: 'PaymentMethod' },
+      { source_field: 'type', target_field: 'type', transform: 'map_value', config: { mapping: { 'card': 'card', 'bank_account': 'direct_debit', 'sepa_debit': 'direct_debit', 'us_bank_account': 'direct_debit' }, default: 'card' }, source_service: 'stripe', source_entity: 'PaymentMethod' },
+      { source_field: 'id', target_field: 'reference_id', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'PaymentMethod' },
+
+      // === Card details ===
+      { source_field: 'card.brand', target_field: 'card.brand', transform: 'lowercase', config: {}, source_service: 'stripe', source_entity: 'PaymentMethod' },
+      { source_field: 'card.last4', target_field: 'card.last4', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'PaymentMethod' },
+      { source_field: 'card.exp_month', target_field: 'card.expiry_month', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'PaymentMethod' },
+      { source_field: 'card.exp_year', target_field: 'card.expiry_year', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'PaymentMethod' },
+      { source_field: 'card.funding', target_field: 'card.funding_type', transform: 'map_value', config: { mapping: { 'credit': 'credit', 'debit': 'debit', 'prepaid': 'prepaid', 'unknown': 'not_known' } }, source_service: 'stripe', source_entity: 'PaymentMethod' },
+      { source_field: 'billing_details.name', target_field: 'card.first_name', transform: 'split_name', config: { part: 'first' }, source_service: 'stripe', source_entity: 'PaymentMethod' },
+      { source_field: 'billing_details.name', target_field: 'card.last_name', transform: 'split_name', config: { part: 'last' }, source_service: 'stripe', source_entity: 'PaymentMethod' },
+      { source_field: 'created', target_field: 'created_at', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'PaymentMethod' },
+
+      // === Customer enrichment ===
+      { source_field: 'email', target_field: 'meta_data.customer_email', transform: 'direct', config: {}, source_service: 'stripe', source_entity: 'Customer' },
+      { source_field: 'default_source', target_field: 'meta_data.is_default', transform: 'computed', config: { expression: 'Stripe.PaymentMethod.id == Stripe.Customer.default_source' }, source_service: 'stripe', source_entity: 'Customer' },
     ],
   },
 
@@ -2639,8 +2777,8 @@ const initialState = {
   targetSchema: seedTargetSchema,
   sources: seedSources,
   targetService: 'chargebee',
-  targetSite: '',
-  targetApiKey: '',
+  targetSite: 'smoothexit-test.chargebee.com',
+  targetApiKey: 'test_8DPFHUnQt60loh8c8O0kSa5jNhrkzyQJ',
   entityMappings: seedEntityMappings,
   dryRun: true,
   batchSize: 100,
@@ -2658,9 +2796,10 @@ const initialState = {
   savedEntityMappings: seedEntityMappings,
 
   // Migration Run State
-  migrationRunStep: 1 as 1 | 2 | 3 | 4 | 5,
-  selectedSourceSchemaKeys: [] as string[],
+  migrationRunStep: 1 as 1 | 2 | 3 | 4,
   selectedMappingKeys: [] as string[],
+  overriddenPrerequisites: new Set<string>(),
+  selectedSourceSchemaKeys: [] as string[], // Legacy: now derived from selected mappings
   uploadedSourceData: {} as Record<string, {
     fileName: string;
     data: Record<string, unknown>[];
@@ -2796,20 +2935,34 @@ export const useMigrationStore = create<MigrationWorkspaceState>((set) => ({
   // Migration Run State
   setMigrationRunStep: (migrationRunStep) => set({ migrationRunStep }),
 
-  setSelectedSourceSchemaKeys: (selectedSourceSchemaKeys) => set({ selectedSourceSchemaKeys }),
-  toggleSourceSchemaSelection: (key) =>
-    set((state) => ({
-      selectedSourceSchemaKeys: state.selectedSourceSchemaKeys.includes(key)
-        ? state.selectedSourceSchemaKeys.filter((k) => k !== key)
-        : [...state.selectedSourceSchemaKeys, key],
-    })),
-
   setSelectedMappingKeys: (selectedMappingKeys) => set({ selectedMappingKeys }),
   toggleMappingSelection: (key) =>
     set((state) => ({
       selectedMappingKeys: state.selectedMappingKeys.includes(key)
         ? state.selectedMappingKeys.filter((k) => k !== key)
         : [...state.selectedMappingKeys, key],
+    })),
+
+  // Prerequisite override management
+  togglePrerequisiteOverride: (entity) =>
+    set((state) => {
+      const newOverrides = new Set(state.overriddenPrerequisites);
+      if (newOverrides.has(entity)) {
+        newOverrides.delete(entity);
+      } else {
+        newOverrides.add(entity);
+      }
+      return { overriddenPrerequisites: newOverrides };
+    }),
+  clearPrerequisiteOverrides: () => set({ overriddenPrerequisites: new Set() }),
+
+  // Legacy: selectedSourceSchemaKeys (kept for backward compatibility)
+  setSelectedSourceSchemaKeys: (selectedSourceSchemaKeys) => set({ selectedSourceSchemaKeys }),
+  toggleSourceSchemaSelection: (key) =>
+    set((state) => ({
+      selectedSourceSchemaKeys: state.selectedSourceSchemaKeys.includes(key)
+        ? state.selectedSourceSchemaKeys.filter((k) => k !== key)
+        : [...state.selectedSourceSchemaKeys, key],
     })),
 
   setUploadedSourceData: (key, data) =>
@@ -2834,8 +2987,9 @@ export const useMigrationStore = create<MigrationWorkspaceState>((set) => ({
   resetMigrationRun: () =>
     set({
       migrationRunStep: 1,
-      selectedSourceSchemaKeys: [],
       selectedMappingKeys: [],
+      overriddenPrerequisites: new Set(),
+      selectedSourceSchemaKeys: [],
       uploadedSourceData: {},
       transformMode: 'sample',
       sampleSize: 10,
